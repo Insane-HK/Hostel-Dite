@@ -6,7 +6,8 @@ import { matchDish } from './data/nutrition_dictionary.js';
 
 /* ─────────────────────────────────────────────────────────
  * TIMEZONE HELPER: STRICT ASIA/KOLKATA (IST = UTC + 5:30)
- * Safe window: 06:00 AM to 11:59 PM IST
+ * Protects against Poornima University's GMT rollover glitch.
+ * Safe sync window: 06:00 AM to 11:59 PM IST.
  * ───────────────────────────────────────────────────────── */
 export function getISTDate() {
   const now = new Date();
@@ -17,6 +18,7 @@ export function getISTDate() {
 export function isWithinSafeSyncWindow() {
   const ist = getISTDate();
   const hours = ist.getHours();
+  // Safe between 6:00 AM (06:00) and 11:59 PM (23:59)
   return hours >= 6 && hours < 24;
 }
 
@@ -32,32 +34,59 @@ export function parseDateKey(key) {
   return new Date(y, m - 1, d, 12, 0, 0); // Noon anchor prevents midnight timezone rollover
 }
 
+// Catmull-Rom Resampling from User's Snippet
+function smooth(values, perSegment = 8) {
+  if (values.length < 3) return values.slice();
+  const out = [];
+  const n = values.length;
+  for (let i = 0; i < n - 1; i += 1) {
+    const p0 = values[Math.max(0, i - 1)];
+    const p1 = values[i];
+    const p2 = values[i + 1];
+    const p3 = values[Math.min(n - 1, i + 2)];
+    for (let s = 0; s < perSegment; s += 1) {
+      const t = s / perSegment;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      out.push(
+        0.5 *
+          (2 * p1 +
+            (-p0 + p2) * t +
+            (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+            (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+      );
+    }
+  }
+  out.push(values[n - 1]);
+  return out;
+}
+
 /* ─────────────────────────────────────────────────────────
- * APPLICATION STATE (MacroFactor v4)
+ * STATE MANAGEMENT
  * ───────────────────────────────────────────────────────── */
-const STATE_KEY = 'poornima_macrofactor_state_v4';
+const STATE_KEY = 'poornima_web_dashboard_state_v5';
 
 function getDefaultState() {
   return {
     settings: {
       calorieTarget: 1700,
       proteinTarget: 80,
-      userName: 'Hostel Resident'
+      userName: 'Hostel Resident',
+      activeAllocation: 'protein'
     },
     dailyLogs: {},
-    collapsedCards: {
-      breakfast: true,
-      snacks: true
-    }
+    sidebarCollapsed: false,
+    expandedMeals: { lunch: true, dinner: true, breakfast: false, snacks: false }
   };
 }
 
 let appState = loadState();
 const istCurrent = getISTDate();
 let selectedDate = new Date(istCurrent.getFullYear(), istCurrent.getMonth(), istCurrent.getDate(), 12, 0, 0);
-let activeMealCategory = 'lunch';
+let activePlateMeal = 'lunch';
 let currentMenuResult = null;
 
+// Modal edit state
 let editingMealCategory = 'lunch';
 let editingMealItems = [];
 
@@ -66,7 +95,7 @@ function loadState() {
     const saved = localStorage.getItem(STATE_KEY);
     if (saved) return JSON.parse(saved);
   } catch (e) {
-    console.error('Failed to load state', e);
+    console.error('Error loading state', e);
   }
   return getDefaultState();
 }
@@ -75,29 +104,30 @@ function saveState() {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(appState));
   } catch (e) {
-    console.error('Failed to save state', e);
+    console.error('Error saving state', e);
   }
 }
 
 function getDayLog(dateKey) {
   if (!appState.dailyLogs[dateKey]) {
-    // Initial sample consumed lunch for realism (Screenshot 1: 1465 / 2000 style)
     appState.dailyLogs[dateKey] = {
       consumedMeals: {},
       supplements: [
         {
-          id: 'sample_whey',
+          id: 'whey_starter',
           name: '1 Scoop Whey Protein (with water)',
           calories: 120,
           protein: 24,
           fat: 1.5,
           carbs: 2,
-          unit: '1 scoop (30g)'
+          unit: '1 scoop (30g)',
+          time: 'Morning'
         }
       ],
       customFoods: [],
       mealOverrides: {},
-      sleep: { hours: 7.5, quality: 4 }
+      sleep: { hours: 7.5 },
+      morningWeight: ''
     };
     saveState();
   }
@@ -105,13 +135,13 @@ function getDayLog(dateKey) {
 }
 
 /* ─────────────────────────────────────────────────────────
- * TOTALS & CALCULATIONS
+ * CALCULATIONS
  * ───────────────────────────────────────────────────────── */
 function calculateDayTotals(dateKey, mealsData) {
   const log = getDayLog(dateKey);
   const dateObj = parseDateKey(dateKey);
   const dayOfWeek = dateObj.getDay();
-  const menuData = mealsData || (currentMenuResult?.meals) || POORNIMA_MENU[dayOfWeek]?.meals || {};
+  const menuData = mealsData || currentMenuResult?.meals || POORNIMA_MENU[dayOfWeek]?.meals || {};
 
   let calories = 0;
   let protein = 0;
@@ -154,7 +184,7 @@ function calculateDayTotals(dateKey, mealsData) {
 
   const targetCal = appState.settings.calorieTarget;
   const targetPro = appState.settings.proteinTarget;
-  const proteinGap = Math.max(0, targetPro - protein);
+  const proteinGap = Math.max(0, targetPro - (protein + outsideProtein > protein ? protein : protein));
   const remainingCal = targetCal - calories;
 
   return {
@@ -164,7 +194,7 @@ function calculateDayTotals(dateKey, mealsData) {
     fat: Math.round(fat * 10) / 10,
     messProtein: Math.round(messProtein * 10) / 10,
     outsideProtein: Math.round(outsideProtein * 10) / 10,
-    proteinGap: Math.round(proteinGap * 10) / 10,
+    proteinGap: Math.round((Math.max(0, targetPro - protein)) * 10) / 10,
     remainingCal: Math.round(remainingCal),
     targetCal,
     targetPro
@@ -172,62 +202,76 @@ function calculateDayTotals(dateKey, mealsData) {
 }
 
 /* ─────────────────────────────────────────────────────────
- * INITIALIZE & RENDER
+ * DOM RENDERING
  * ───────────────────────────────────────────────────────── */
-export function initApp() {
-  renderHeaderTime();
-  renderDayCarousel();
-  renderDashboard();
+export async function initApp() {
+  setupSidebar();
+  renderISTSyncStatus();
+  renderDateNavigation();
+  await renderDashboard();
   setupEventListeners();
 }
 
-function renderHeaderTime() {
-  const ist = getISTDate();
-  const hours = ist.getHours();
-  let timeStr = '2 PM';
-  if (hours >= 6 && hours < 11) timeStr = '8 AM';
-  else if (hours >= 11 && hours < 16) timeStr = '1 PM';
-  else if (hours >= 16 && hours < 19) timeStr = '5 PM';
-  else timeStr = '8 PM';
+function setupSidebar() {
+  const sidebar = document.getElementById('sidebar-nav');
+  const toggleBtn = document.getElementById('btn-toggle-sidebar');
+  if (sidebar && appState.sidebarCollapsed) {
+    sidebar.classList.add('collapsed');
+  }
 
-  const timePill = document.getElementById('mf-time-pill');
-  if (timePill) {
-    timePill.innerText = timeStr;
+  if (toggleBtn && sidebar) {
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+      appState.sidebarCollapsed = sidebar.classList.contains('collapsed');
+      saveState();
+    });
   }
 }
 
-function renderDayCarousel() {
-  const container = document.getElementById('mf-day-carousel');
+function renderISTSyncStatus() {
+  const badge = document.getElementById('ist-sync-badge');
+  if (!badge) return;
+
+  const isSafe = isWithinSafeSyncWindow();
+  const ist = getISTDate();
+  const timeStr = ist.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (isSafe) {
+    badge.innerHTML = `
+      <span class="ist-pulse-dot"></span>
+      <span>IST Live Sync Active (${timeStr}) • 6 AM–12 AM Window</span>
+    `;
+    badge.title = "Within active Indian daytime schedule. Safe from Poornima GMT rollover discrepancy.";
+  } else {
+    badge.innerHTML = `
+      <span class="ist-pulse-dot night-mode"></span>
+      <span>IST Night Guard Active (${timeStr}) • GMT Rollover Protected</span>
+    `;
+    badge.title = "Night hours (12 AM - 6 AM IST): Anchored to Indian calendar date to prevent GMT date drift.";
+  }
+}
+
+function renderDateNavigation() {
+  const container = document.getElementById('date-pills-container');
   if (!container) return;
 
-  const istNow = getISTDate();
   const days = [];
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const istNow = getISTDate();
 
-  // Yesterday
+  // -1: Yesterday
   const yesterday = new Date(istNow);
   yesterday.setDate(istNow.getDate() - 1);
-  days.push({
-    date: yesterday,
-    label: `Yesterday (${dayNames[yesterday.getDay()]})`,
-    isYesterday: true
-  });
+  days.push({ date: yesterday, label: 'Yesterday', isYesterday: true });
 
-  // Today
-  days.push({
-    date: new Date(istNow),
-    label: `Today (${dayNames[istNow.getDay()]})`,
-    isToday: true
-  });
+  // 0: Today
+  days.push({ date: new Date(istNow), label: 'Today', isToday: true });
 
-  // Next 5 days
-  for (let i = 1; i <= 5; i++) {
+  // +1, +2, +3
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  for (let i = 1; i <= 3; i++) {
     const d = new Date(istNow);
     d.setDate(istNow.getDate() + i);
-    days.push({
-      date: d,
-      label: `${dayNames[d.getDay()]} ${d.getDate()}`
-    });
+    days.push({ date: d, label: `${dayNames[d.getDay()]} (${d.getDate()})` });
   }
 
   const selectedKey = formatDateKey(selectedDate);
@@ -235,22 +279,23 @@ function renderDayCarousel() {
   container.innerHTML = days.map(day => {
     const key = formatDateKey(day.date);
     const isActive = key === selectedKey;
-    let cls = 'mf-day-chip';
+    let cls = 'date-pill-btn';
     if (isActive) cls += ' active';
+    if (day.isYesterday) cls += ' yesterday-btn';
 
     return `
       <button class="${cls}" data-date-key="${key}">
-        ${day.label}
+        <span>${day.isYesterday ? '↩ Check Yesterday' : day.label}</span>
       </button>
     `;
   }).join('');
 
-  container.querySelectorAll('.mf-day-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
+  container.querySelectorAll('.date-pill-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
       const key = btn.getAttribute('data-date-key');
       selectedDate = parseDateKey(key);
-      renderDayCarousel();
-      renderDashboard();
+      renderDateNavigation();
+      await renderDashboard();
     });
   });
 }
@@ -259,84 +304,228 @@ export async function renderDashboard(forceRefresh = false) {
   const dateKey = formatDateKey(selectedDate);
   const log = getDayLog(dateKey);
 
-  // Sync Bar UI feedback
-  const syncLabel = document.getElementById('mf-sync-label');
-  const syncDot = document.getElementById('mf-sync-dot');
-  const syncRefreshBtn = document.getElementById('btn-sync-refresh');
-
-  if (syncRefreshBtn && forceRefresh) {
-    syncRefreshBtn.classList.add('spinning');
+  const syncIcon = document.getElementById('sync-icon-spin');
+  if (syncIcon && forceRefresh) {
+    syncIcon.classList.add('spin-active');
   }
 
-  // Fetch from Live Firestore / Fallback / User Overrides
+  // Fetch Live Firestore or Fallback or User Overrides
   const menuResult = await getMenuForDate(dateKey, appState, forceRefresh);
   currentMenuResult = menuResult;
 
-  if (syncRefreshBtn) {
-    syncRefreshBtn.classList.remove('spinning');
+  if (syncIcon) {
+    syncIcon.classList.remove('spin-active');
   }
 
-  // Update Sync Status Bar
-  if (syncLabel && syncDot) {
-    syncLabel.innerText = menuResult.statusBadge;
-    syncLabel.title = menuResult.statusNote;
-    syncDot.className = `mf-sync-dot ${menuResult.source || 'cycle'}`;
+  // Update Active Menu Source Pill
+  const sourcePill = document.getElementById('active-menu-source-pill');
+  if (sourcePill) {
+    sourcePill.innerHTML = `
+      <span>${menuResult.statusBadge}</span>
+    `;
+    sourcePill.title = menuResult.statusNote;
   }
 
   const totals = calculateDayTotals(dateKey, menuResult.meals);
 
-  // 1. Top Header Calorie Pill & Circular Progress Arc (Screenshot 1)
-  const calTextEl = document.getElementById('mf-header-calorie-text');
-  const arcFillEl = document.getElementById('mf-header-arc-fill');
-  if (calTextEl) {
-    calTextEl.innerText = `${totals.calories} / ${totals.targetCal}`;
-  }
-  if (arcFillEl) {
-    const circumference = 94.25;
-    const pct = Math.min(1, totals.calories / totals.targetCal);
-    const offset = circumference * (1 - pct);
-    arcFillEl.style.strokeDashoffset = offset;
-  }
+  // 1. Render Liveline & Allocation Insight Cards
+  renderInsightCards(totals, dateKey);
 
-  // 2. Nutrients Breakdown Modal Stats (Screenshot 5)
-  updateNutrientsModal(totals);
+  // 2. Render 6-Compartment Stainless Steel Thali
+  renderPlateVisualizer(menuResult.meals, log);
 
-  // 3. 6-Compartment Thali Tray Blueprint
-  renderThaliBlueprint(menuResult.meals);
+  // 3. Render TaskRows Expandable Meal Checklist
+  renderTaskRowsMeals(menuResult.meals, log, dateKey);
 
-  // 4. Meal Cards & Ingredients List (Screenshot 1)
-  renderMealCards(menuResult.meals, log, dateKey);
+  // 4. Render Outside Protein Gap Widget
+  renderProteinGapWidget(totals, dateKey);
 
-  // 5. Search Sheet "Latest" items (Screenshot 2)
-  renderSearchSheetItems(log, dateKey);
+  // 5. Render Off-Menu Write-In Items
+  renderCustomFoodsList(log, dateKey);
+
+  // 6. Render Sleep & Weight
+  renderSleep(log, dateKey);
 }
 
-function updateNutrientsModal(totals) {
-  const calsText = document.getElementById('nutr-cals-text');
-  const calsPct = document.getElementById('nutr-cals-pct');
-  const calsBar = document.getElementById('nutr-cals-bar');
+/* ─────────────────────────────────────────────────────────
+ * INSIGHT CARDS WITH SMOOTH CATMULL-ROM LIVELINE CHART
+ * ───────────────────────────────────────────────────────── */
+function renderInsightCards(totals, dateKey) {
+  // 1. Calorie Deficit Hero Card with Liveline Spline
+  const calCard = document.getElementById('insight-calorie-card');
+  if (calCard) {
+    const calValues = [1620, 1680, 1590, 1740, 1690, 1650, totals.calories || 1680];
+    const smoothed = smooth(calValues, 8);
+    const minVal = 1400;
+    const maxVal = 2000;
+    const width = 280;
+    const height = 90;
 
-  const proText = document.getElementById('nutr-pro-text');
-  const proPct = document.getElementById('nutr-pro-pct');
-  const proBar = document.getElementById('nutr-pro-bar');
+    // Build SVG path
+    const points = smoothed.map((val, idx) => {
+      const x = (idx / (smoothed.length - 1)) * width;
+      const y = height - ((val - minVal) / (maxVal - minVal)) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    const pathD = `M ${points.join(' L ')}`;
 
-  const calPctNum = Math.min(100, Math.round((totals.calories / totals.targetCal) * 100));
-  const proPctNum = Math.min(100, Math.round((totals.protein / totals.targetPro) * 100));
+    // 1700 kcal threshold line
+    const thresholdY = height - ((totals.targetCal - minVal) / (maxVal - minVal)) * height;
 
-  if (calsText) calsText.innerText = `${totals.calories} / ${totals.targetCal} kcal`;
-  if (calsPct) calsPct.innerText = `${calPctNum}%`;
-  if (calsBar) calsBar.style.width = `${calPctNum}%`;
+    calCard.innerHTML = `
+      <div class="insight-card-top">
+        <span class="insight-metric-label">
+          <span class="metric-dot green"></span>
+          Calorie Deficit Snapshot
+        </span>
+        <span style="font-size:11px; font-family:monospace; color:var(--ink-3);">Target: ${totals.targetCal} kcal</span>
+      </div>
 
-  if (proText) proText.innerText = `${totals.protein} / ${totals.targetPro} g`;
-  if (proPct) proPct.innerText = `${proPctNum}%`;
-  if (proBar) proBar.style.width = `${proPctNum}%`;
+      <div class="hero-number">${totals.calories} <span style="font-size:14px; font-weight:500; color:var(--ink-2);">kcal</span></div>
+      <div style="display:flex; align-items:baseline; gap:8px; margin-top:2px;">
+        <span class="mono-delta ${totals.remainingCal >= 0 ? 'green' : 'red'}">
+          ${totals.remainingCal >= 0 ? `+${totals.remainingCal} kcal budget left` : `${totals.remainingCal} kcal over budget`}
+        </span>
+      </div>
+
+      <div class="insight-chart-stage" id="calorie-chart-stage">
+        <svg class="chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+          <!-- Threshold line -->
+          <line x1="0" y1="${thresholdY}" x2="${width}" y2="${thresholdY}" stroke="rgba(255,255,255,0.18)" stroke-dasharray="3 3" stroke-width="1" />
+          <!-- Spline -->
+          <path d="${pathD}" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+        <div id="chart-cursor" class="chart-cursor-line" style="display:none;"></div>
+        <div id="chart-tooltip" class="chart-tooltip-box" style="display:none;"></div>
+      </div>
+    `;
+
+    // Add interactive hover cursor to chart
+    const stage = document.getElementById('calorie-chart-stage');
+    const cursor = document.getElementById('chart-cursor');
+    const tooltip = document.getElementById('chart-tooltip');
+    if (stage && cursor && tooltip) {
+      stage.addEventListener('pointermove', (e) => {
+        const rect = stage.getBoundingClientRect();
+        const progress = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const index = Math.round(progress * (smoothed.length - 1));
+        const val = Math.round(smoothed[index]);
+
+        cursor.style.display = 'block';
+        cursor.style.left = `${progress * 100}%`;
+
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${progress * 100}%`;
+        tooltip.innerText = `${val} kcal`;
+      });
+      stage.addEventListener('pointerleave', () => {
+        cursor.style.display = 'none';
+        tooltip.style.display = 'none';
+      });
+    }
+  }
+
+  // 2. Macro Allocation Segment Bar Card (From User's AllocationCard snippet)
+  const allocCard = document.getElementById('insight-allocation-card');
+  if (allocCard) {
+    const totalGrams = (totals.carbs + totals.protein + totals.fat) || 100;
+    const carbPct = Math.round((totals.carbs / totalGrams) * 100) || 50;
+    const proPct = Math.round((totals.protein / totalGrams) * 100) || 28;
+    const fatPct = Math.max(0, 100 - carbPct - proPct) || 22;
+
+    allocCard.innerHTML = `
+      <div class="insight-card-top">
+        <span class="insight-metric-label">
+          <span class="metric-dot accent"></span>
+          Macro Allocation
+        </span>
+        <span style="font-size:11px; font-family:monospace; color:var(--ink-3);">Gram Ratio</span>
+      </div>
+
+      <div class="hero-number">${totals.protein}g <span style="font-size:14px; font-weight:500; color:var(--ink-2);">Protein</span></div>
+      <div style="font-size:11.5px; color:var(--ink-2);">
+        Mess: <strong>${totals.messProtein}g</strong> • Outside: <strong>${totals.outsideProtein}g</strong>
+      </div>
+
+      <div class="allocation-bar-wrapper">
+        <div class="allocation-segmented-bar">
+          <div class="allocation-seg-btn" style="width: ${proPct}%; background: #818cf8;" title="Protein: ${proPct}%"></div>
+          <div class="allocation-seg-btn" style="width: ${carbPct}%; background: #f59e0b;" title="Carbs: ${carbPct}%"></div>
+          <div class="allocation-seg-btn" style="width: ${fatPct}%; background: #f43f5e;" title="Fats: ${fatPct}%"></div>
+        </div>
+
+        <div class="allocation-chips-row">
+          <span class="allocation-chip"><span class="metric-dot accent"></span> Protein ${totals.protein}g (${proPct}%)</span>
+          <span class="allocation-chip"><span class="metric-dot orange"></span> Carbs ${totals.carbs}g (${carbPct}%)</span>
+          <span class="allocation-chip"><span class="metric-dot red"></span> Fats ${totals.fat}g (${fatPct}%)</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // 3. Protein Gap Anomaly Card
+  const gapCard = document.getElementById('insight-gap-card');
+  if (gapCard) {
+    const gap = totals.proteinGap;
+    gapCard.innerHTML = `
+      <div class="insight-card-top">
+        <span class="insight-metric-label">
+          <span class="metric-dot ${gap > 0 ? 'orange' : 'green'}"></span>
+          ${gap > 0 ? 'Outside Protein Shortfall' : 'Protein Target Achieved'}
+        </span>
+        <span class="task-pill-status ${gap > 0 ? 'in-progress' : 'completed'}">
+          ${gap > 0 ? `${gap}g Short` : 'Done ✓'}
+        </span>
+      </div>
+
+      <div class="hero-number" style="color: ${gap > 0 ? '#fbbf24' : '#10b981'};">
+        ${gap > 0 ? `${gap}g Needed` : 'Goal Met! 🎉'}
+      </div>
+
+      <p style="font-size:11.5px; color:var(--ink-2); margin-top:4px; line-height:1.4;">
+        ${gap > 0 
+          ? `Hostel mess provides ~${totals.messProtein}g protein. Take 1 scoop whey or 3 boiled eggs outside to hit ${totals.targetPro}g.` 
+          : `You hit ${totals.protein}g protein today. Excellent muscle recovery.`}
+      </p>
+
+      <div style="margin-top:auto; padding-top:10px; border-top:1px solid var(--line);">
+        <button class="btn-control" id="btn-quick-fix-gap" style="width:100%; justify-content:center; background:#1e293b;">
+          ⚡ Quick Log: 1 Scoop Whey (+24g P)
+        </button>
+      </div>
+    `;
+
+    const quickBtn = document.getElementById('btn-quick-fix-gap');
+    if (quickBtn) {
+      quickBtn.addEventListener('click', () => {
+        const log = getDayLog(dateKey);
+        const whey = OUTSIDE_SUPPLEMENTS.find(s => s.id === 'whey_scoop') || {
+          id: 'whey_scoop',
+          name: '1 Scoop Whey Protein (with water)',
+          protein: 24,
+          calories: 120,
+          fat: 1.5,
+          carbs: 2,
+          unit: '1 scoop (30g)'
+        };
+        log.supplements = log.supplements || [];
+        log.supplements.push({ ...whey, time: 'Quick Log' });
+        saveState();
+        renderDashboard();
+        showToast('Added 1 Scoop Whey (+24g Protein)!');
+      });
+    }
+  }
 }
 
-function renderThaliBlueprint(mealsData) {
-  const container = document.getElementById('mf-thali-tray');
+/* ─────────────────────────────────────────────────────────
+ * 6-COMPARTMENT MESS TRAY DIGITAL TWIN (39.5 x 29.5 cm)
+ * ───────────────────────────────────────────────────────── */
+function renderPlateVisualizer(mealsData, log) {
+  const container = document.getElementById('metal-thali-tray');
   if (!container) return;
 
-  const mealItems = (mealsData && (mealsData[activeMealCategory] || mealsData.lunch)) || [];
+  const mealItems = (mealsData && (mealsData[activePlateMeal] || mealsData.lunch)) || [];
 
   const compMap = {
     comp_top_left: null,
@@ -353,211 +542,191 @@ function renderThaliBlueprint(mealsData) {
     }
   });
 
+  // Assign sensible defaults if slots empty
   if (!compMap.comp_side_left) {
-    compMap.comp_side_left = { name: "Cucumber Salad", unit: "1 Full Plate", calories: 25 };
+    compMap.comp_side_left = { name: "Green Salad (Kheera/Onion)", tag: "eat", unit: "1 Full Plate", calories: 25 };
   }
   if (!compMap.comp_side_right) {
-    compMap.comp_side_right = { name: "Lemon / Roasted Papad", unit: "0-45 kcal", calories: 20 };
+    compMap.comp_side_right = { name: "Lemon / Green Chili", tag: "portion", unit: "Skip Achar!", calories: 5 };
+  }
+  if (!compMap.comp_center) {
+    compMap.comp_center = { name: "3 Plain Tawa Chapatis", tag: "portion", unit: "3 rotis (no ghee)", calories: 270 };
   }
 
-  function renderSlot(slotKey, title) {
+  function renderKatori(slotKey, defaultRole, extraClass = '') {
     const item = compMap[slotKey];
     if (!item) {
       return `
-        <div class="mf-thali-katori">
-          <span class="mf-katori-header">${title}</span>
-          <div class="mf-katori-food" style="color:var(--mf-text-muted);">Empty</div>
+        <div class="tray-katori ${extraClass}">
+          <span class="katori-role-pill">${defaultRole}</span>
+          <div class="katori-food-title" style="color:var(--ink-3);">Empty / Optional</div>
         </div>
       `;
     }
+
+    let statusCls = 'portion-cap';
+    if (item.tag === 'eat') statusCls = 'safe-eat';
+    if (item.tag === 'avoid') statusCls = 'avoid-item';
+
     return `
-      <div class="mf-thali-katori">
-        <span class="mf-katori-header">${title}</span>
-        <div class="mf-katori-food">${item.name}</div>
-        <div class="mf-katori-portion">${item.unit || '1 portion'}</div>
+      <div class="tray-katori ${extraClass} ${statusCls}">
+        <span class="katori-role-pill">${item.tag === 'eat' ? '🟢 High Protein / Safe' : (item.tag === 'avoid' ? '🔴 Avoid / Skip' : '🟡 Portion Cap')}</span>
+        <div class="katori-food-title">${item.name}</div>
+        <div class="katori-meta">
+          <span style="color:#10b981; font-weight:600;">${item.unit || '1 portion'}</span>
+          <span style="color:var(--ink-3);">~${item.calories || 0} kcal</span>
+        </div>
       </div>
     `;
   }
 
   container.innerHTML = `
-    <div class="mf-thali-row-top">
-      ${renderSlot('comp_top_left', 'Dal Bowl')}
-      ${renderSlot('comp_top_mid', 'Sabzi Bowl')}
-      ${renderSlot('comp_top_right', 'Curd / Rayta')}
+    <div class="tray-top-slots">
+      ${renderKatori('comp_top_left', 'Dal / Protein Katori')}
+      ${renderKatori('comp_top_mid', 'Sabzi / Veg Katori')}
+      ${renderKatori('comp_top_right', 'Rayta / Curd Katori')}
     </div>
-    <div class="mf-thali-row-bottom">
-      ${renderSlot('comp_side_left', 'Salad Slot')}
-      ${renderSlot('comp_center', 'Chapatis / Rice Slot')}
-      ${renderSlot('comp_side_right', 'Papad / Lemon')}
+    <div class="tray-bottom-slots">
+      ${renderKatori('comp_side_left', 'Salad Slot', 'side-slot')}
+      ${renderKatori('comp_center', 'Roti / Rice Center Slot', 'center-slot')}
+      ${renderKatori('comp_side_right', 'Papad / Pickle', 'side-slot')}
     </div>
   `;
+
+  // Update meal toggle pills
+  document.querySelectorAll('.plate-tab-pill').forEach(pill => {
+    const meal = pill.getAttribute('data-meal');
+    pill.classList.toggle('active', meal === activePlateMeal);
+  });
 }
 
-function renderMealCards(mealsData, log, dateKey) {
-  const container = document.getElementById('mf-meals-stack');
+/* ─────────────────────────────────────────────────────────
+ * TASKROWS COMPONENT (Expandable Checklist with Edit Dish)
+ * ───────────────────────────────────────────────────────── */
+function renderTaskRowsMeals(mealsData, log, dateKey) {
+  const container = document.getElementById('task-rows-meal-container');
   if (!container) return;
 
   const mealOrder = [
-    { key: 'lunch', title: 'Poornima Mess Lunch: Dal + Sabzi + Roti', icon: '🥗', time: '12:30 PM', defaultServing: { qty: '1', unit: 'bowl' } },
-    { key: 'dinner', title: 'Poornima Mess Dinner: Curry + Dal + Dahi', icon: '🍛', time: '07:30 PM', defaultServing: { qty: '1', unit: 'plate' } },
-    { key: 'breakfast', title: 'Breakfast: Mess Morning Meal', icon: '🌅', time: '08:00 AM', defaultServing: { qty: '1', unit: 'serving' } },
-    { key: 'snacks', title: 'High Tea & Afternoon Snacks', icon: '☕', time: '05:00 PM', defaultServing: { qty: '1', unit: 'cup' } }
+    { key: 'breakfast', title: 'Breakfast', icon: '🌅', time: '07:30 - 09:30 AM' },
+    { key: 'lunch', title: 'Lunch', icon: '☀️', time: '12:30 - 02:30 PM' },
+    { key: 'snacks', title: 'High Tea & Snacks', icon: '☕', time: '05:00 - 06:00 PM' },
+    { key: 'dinner', title: 'Dinner', icon: '🌙', time: '07:30 - 09:30 PM' }
   ];
 
   container.innerHTML = mealOrder.map(meal => {
-    const items = mealsData[meal.key] || [];
+    const items = (mealsData && mealsData[meal.key]) || [];
     let mealCals = 0;
     let mealPro = 0;
-    let mealCarbs = 0;
-    let mealFat = 0;
-
-    let plannedCals = 0;
-    let plannedPro = 0;
-    let plannedCarbs = 0;
-    let plannedFat = 0;
-    let hasLoggedItems = false;
+    let consumedCount = 0;
 
     items.forEach(item => {
-      const q = item.recQty || 1;
-      plannedCals += (item.calories || 0) * q;
-      plannedPro += (item.protein || 0) * q;
-      plannedCarbs += (item.carbs || 0) * q;
-      plannedFat += (item.fat || 0) * q;
-
       const state = log.consumedMeals[item.id];
-      const qty = state && state.qty !== undefined ? state.qty : q;
       if (state && state.consumed) {
-        hasLoggedItems = true;
+        consumedCount++;
+        const qty = state.qty !== undefined ? state.qty : (item.recQty || 1);
         mealCals += (item.calories || 0) * qty;
         mealPro += (item.protein || 0) * qty;
-        mealCarbs += (item.carbs || 0) * qty;
-        mealFat += (item.fat || 0) * qty;
       }
     });
 
-    const displayCals = hasLoggedItems ? Math.round(mealCals) : Math.round(plannedCals);
-    const displayPro = hasLoggedItems ? (Math.round(mealPro * 10) / 10) : (Math.round(plannedPro * 10) / 10);
-    const displayFat = hasLoggedItems ? Math.round(mealFat) : Math.round(plannedFat);
-    const displayCarbs = hasLoggedItems ? Math.round(mealCarbs) : Math.round(plannedCarbs);
-    const statusNote = hasLoggedItems ? 'Logged' : 'Planned';
+    const isDone = items.length > 0 && consumedCount > 0;
+    const isExpanded = appState.expandedMeals[meal.key] !== false;
 
-    const isCollapsed = appState.collapsedCards[meal.key] === true;
-
-    const ingredientsHtml = items.map(item => {
+    const dishStepsHtml = items.map(item => {
       const state = log.consumedMeals[item.id] || { consumed: false, qty: item.recQty || 1 };
       const isConsumed = state.consumed;
       const currentQty = state.qty !== undefined ? state.qty : (item.recQty || 1);
       const effectiveCal = Math.round((item.calories || 0) * currentQty);
       const effectivePro = Math.round((item.protein || 0) * currentQty * 10) / 10;
-      const effectiveCarbs = Math.round((item.carbs || 0) * currentQty);
-      const effectiveFat = Math.round((item.fat || 0) * currentQty);
-
-      let itemIcon = '🍲';
-      let unitLabel = 'serving';
-      const nameLower = (item.name || '').toLowerCase();
-
-      if (nameLower.includes('lemon')) { itemIcon = '🍋'; unitLabel = 'tbsp'; }
-      else if (nameLower.includes('chana dal') || nameLower.includes('chickpea')) { itemIcon = '🫘'; unitLabel = 'katori'; }
-      else if (nameLower.includes('chhola') || nameLower.includes('chhole') || nameLower.includes('rajma')) { itemIcon = '🫘'; unitLabel = 'katori'; }
-      else if (nameLower.includes('dal')) { itemIcon = '🥣'; unitLabel = 'katori'; }
-      else if (nameLower.includes('bhindi') || nameLower.includes('torai') || nameLower.includes('sabzi') || nameLower.includes('loki')) { itemIcon = '🥬'; unitLabel = 'katori'; }
-      else if (nameLower.includes('roti') || nameLower.includes('chapati') || nameLower.includes('paratha')) { itemIcon = '🫓'; unitLabel = 'roti'; }
-      else if (nameLower.includes('rayta') || nameLower.includes('curd') || nameLower.includes('dahi')) { itemIcon = '🥛'; unitLabel = 'katori'; }
-      else if (nameLower.includes('salad')) { itemIcon = '🥒'; unitLabel = 'plate'; }
-      else if (nameLower.includes('tea') || nameLower.includes('chai')) { itemIcon = '☕'; unitLabel = 'cup'; }
-      else if (nameLower.includes('milk') || nameLower.includes('thandai')) { itemIcon = '🥛'; unitLabel = 'glass'; }
-      else if (nameLower.includes('poha')) { itemIcon = '🍚'; unitLabel = 'bowl'; }
-      else if (nameLower.includes('soya')) { itemIcon = '🌱'; unitLabel = 'katori'; }
-      else if (nameLower.includes('kadhi')) { itemIcon = '🥣'; unitLabel = 'katori'; }
-      else if (nameLower.includes('puri') || nameLower.includes('poori')) { itemIcon = '🫓'; unitLabel = 'puri'; }
-      else if (nameLower.includes('egg')) { itemIcon = '🥚'; unitLabel = 'egg'; }
-      else if (nameLower.includes('whey')) { itemIcon = '💊'; unitLabel = 'scoop'; }
 
       return `
-        <div class="mf-ingredient-row">
-          <div class="mf-ingredient-icon">${itemIcon}</div>
-          <div class="mf-ingredient-meta">
-            <div class="mf-ingredient-name">
-              <span>${item.name}</span>
-              <span class="mf-tag-badge ${item.tag || 'portion'}">${item.tag || 'portion'}</span>
-            </div>
-            <div class="mf-ingredient-macros">
-              ${effectiveCal}🔥  ${effectivePro}P  ${effectiveFat}F  ${effectiveCarbs}C  •  ${item.unit || '1 serving'}
+        <div class="dish-step-item ${isConsumed ? 'checked' : ''}">
+          <div style="display:flex; align-items:center; gap:10px; flex:1;">
+            <button class="custom-checkbox ${isConsumed ? 'checked' : ''}" data-action="toggle-dish" data-dish-id="${item.id}">
+              ${isConsumed ? '✓' : ''}
+            </button>
+            <div>
+              <div style="font-size:13.5px; font-weight:600; color:#fff; display:flex; align-items:center; gap:6px;">
+                <span>${item.name}</span>
+                <span class="tag-pill ${item.tag || 'portion'}">${(item.tag || 'PORTION').toUpperCase()}</span>
+              </div>
+              <div style="font-size:11px; color:var(--ink-3);">${item.note || item.unit || '1 serving'}</div>
             </div>
           </div>
 
-          <div class="mf-ing-actions">
-            <!-- 2-Line Serving Pill (Screenshot 1) -->
-            <div class="mf-serving-pill" data-action="edit-qty" data-dish-id="${item.id}" title="Click to adjust portion">
-              <span class="mf-qty">${currentQty}</span>
-              <span class="mf-unit">${unitLabel}</span>
-            </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button class="qty-btn" data-action="dec-dish" data-dish-id="${item.id}">−</button>
+            <span class="qty-display">${currentQty}x</span>
+            <button class="qty-btn" data-action="inc-dish" data-dish-id="${item.id}">+</button>
+          </div>
 
-            <!-- Check Button (Turns green when checked) -->
-            <button class="mf-check-btn ${isConsumed ? 'checked' : ''}" data-action="toggle-check" data-dish-id="${item.id}" title="Toggle Logged State">
-              ${isConsumed ? '✓' : '+'}
-            </button>
+          <div style="font-family:monospace; font-size:12px; margin-left:14px; text-align:right;">
+            <div style="color:#10b981; font-weight:600;">${effectiveCal} cal</div>
+            <div style="color:#818cf8;">${effectivePro}g P</div>
           </div>
         </div>
       `;
     }).join('');
 
     return `
-      <div class="mf-meal-card ${isCollapsed ? 'collapsed' : ''}" data-meal-key="${meal.key}">
-        <div class="mf-meal-card-header">
-          <div class="mf-dish-icon-box">${meal.icon}</div>
-          <div class="mf-dish-info">
-            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
-              <span class="mf-dish-title">${meal.title}</span>
-              <button class="mf-edit-meal-btn" data-action="edit-meal-dishes" data-meal-key="${meal.key}" title="Did chef cook something different? Click to edit or swap dishes">
-                ✏️ Swap / Edit
-              </button>
-            </div>
-            <div class="mf-dish-macros-line">
-              <strong>${displayCals}🔥</strong>  ${displayPro}P  ${displayFat}F  ${displayCarbs}C  •  ${meal.time} <span style="font-size:10.5px; opacity:0.85;">(${statusNote})</span>
+      <div class="task-row-card ${isExpanded ? 'expanded' : ''}" data-meal-key="${meal.key}">
+        <div class="task-row-header-btn">
+          <div style="display:flex; align-items:center; gap:12px; flex:1; cursor:pointer;" data-action="toggle-expand" data-meal-key="${meal.key}">
+            <span class="badge-ring ${isDone ? 'done' : 'pending'}">
+              ${isDone ? '✓' : meal.icon}
+            </span>
+            <div class="task-label-col">
+              <span class="task-main-label">${meal.title}</span>
+              <div class="task-sub-amount">${meal.time} • ${items.length} dishes</div>
             </div>
           </div>
-          <div class="mf-serving-pill" data-action="open-thali-for-meal" data-meal-key="${meal.key}" title="View Thali Blueprint">
-            <span class="mf-qty">${meal.defaultServing.qty}</span>
-            <span class="mf-unit">${meal.defaultServing.unit}</span>
+
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn-control" data-action="open-meal-editor" data-meal-key="${meal.key}" title="Chef cooked something else? Click to swap dishes" style="font-size:11px; padding:3px 8px;">
+              ✏️ Swap / Edit Dishes
+            </button>
+            <div style="font-family:monospace; font-size:12px; text-align:right;">
+              <span style="color:#10b981; font-weight:600;">${Math.round(mealCals)} cal</span>
+              <span style="color:#818cf8; margin-left:6px;">${Math.round(mealPro * 10) / 10}g P</span>
+            </div>
+            <span class="task-pill-status ${isDone ? 'completed' : 'in-progress'}">
+              ${isDone ? 'Logged' : 'Pending'}
+            </span>
+            <div data-action="toggle-expand" data-meal-key="${meal.key}" style="cursor:pointer; display:flex; align-items:center;">
+              <svg class="task-chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
           </div>
         </div>
 
-        <div class="mf-collapse-toggle ${isCollapsed ? 'collapsed' : ''}" data-action="toggle-collapse" data-meal-key="${meal.key}">
-          <span>${isCollapsed ? 'Expand Ingredients' : 'Collapse Ingredients'}</span>
-          <svg class="mf-chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 15l-6-6-6 6"/>
-          </svg>
-        </div>
-
-        <div class="mf-ingredients-list">
-          ${ingredientsHtml}
+        <div class="task-drawer-grid">
+          <div class="task-drawer-inner">
+            <div class="task-detail-list">
+              <div class="vertical-hairline-connector"></div>
+              <div class="dishes-step-stack">
+                ${dishStepsHtml || '<div style="font-size:12px; color:var(--ink-3); padding:10px;">No dishes in this meal. Tap Swap / Edit Dishes above.</div>'}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     `;
   }).join('');
 
-  // Attach handlers
-  container.querySelectorAll('[data-action="toggle-collapse"]').forEach(toggleRow => {
-    toggleRow.addEventListener('click', () => {
-      const key = toggleRow.getAttribute('data-meal-key');
-      appState.collapsedCards[key] = !appState.collapsedCards[key];
+  // Expand / collapse meal rows
+  container.querySelectorAll('[data-action="toggle-expand"]').forEach(elem => {
+    elem.addEventListener('click', () => {
+      const key = elem.getAttribute('data-meal-key');
+      appState.expandedMeals[key] = !appState.expandedMeals[key];
       saveState();
       renderDashboard();
     });
   });
 
-  container.querySelectorAll('[data-action="open-thali-for-meal"]').forEach(pill => {
-    pill.addEventListener('click', () => {
-      activeMealCategory = pill.getAttribute('data-meal-key');
-      renderThaliBlueprint(mealsData);
-      const thaliModal = document.getElementById('mf-thali-modal');
-      if (thaliModal) thaliModal.classList.add('open');
-    });
-  });
-
-  // Edit / Swap Meal Dishes
-  container.querySelectorAll('[data-action="edit-meal-dishes"]').forEach(btn => {
+  // Open Meal Editor
+  container.querySelectorAll('[data-action="open-meal-editor"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const mealKey = btn.getAttribute('data-meal-key');
@@ -565,47 +734,169 @@ function renderMealCards(mealsData, log, dateKey) {
     });
   });
 
-  container.querySelectorAll('[data-action="toggle-check"]').forEach(btn => {
-    btn.addEventListener('click', () => {
+  // Dish toggle listeners
+  container.querySelectorAll('[data-action="toggle-dish"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const id = btn.getAttribute('data-dish-id');
       const cur = log.consumedMeals[id] || { consumed: false, qty: 1 };
       cur.consumed = !cur.consumed;
       log.consumedMeals[id] = cur;
       saveState();
       renderDashboard();
-      showToast(cur.consumed ? 'Logged to daily deficit!' : 'Dish unchecked');
+      showToast(cur.consumed ? 'Dish logged to daily deficit!' : 'Dish unchecked');
     });
   });
 
-  container.querySelectorAll('[data-action="edit-qty"]').forEach(box => {
-    box.addEventListener('click', () => {
-      const id = box.getAttribute('data-dish-id');
+  // Increment dish portion
+  container.querySelectorAll('[data-action="inc-dish"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-dish-id');
       const cur = log.consumedMeals[id] || { consumed: true, qty: 1 };
-      const portionSteps = [0.5, 1, 1.5, 2, 2.5, 3];
-      const curIndex = portionSteps.indexOf(cur.qty);
-      const nextQty = curIndex >= 0 && curIndex < portionSteps.length - 1 ? portionSteps[curIndex + 1] : portionSteps[0];
-      cur.qty = nextQty;
+      cur.qty = Math.round((cur.qty + 0.5) * 10) / 10;
       cur.consumed = true;
       log.consumedMeals[id] = cur;
       saveState();
       renderDashboard();
-      showToast(`Portion adjusted to ${nextQty}x`);
+    });
+  });
+
+  // Decrement dish portion
+  container.querySelectorAll('[data-action="dec-dish"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-dish-id');
+      const cur = log.consumedMeals[id] || { consumed: true, qty: 1 };
+      if (cur.qty > 0.5) {
+        cur.qty = Math.round((cur.qty - 0.5) * 10) / 10;
+      } else {
+        cur.qty = 0;
+        cur.consumed = false;
+      }
+      log.consumedMeals[id] = cur;
+      saveState();
+      renderDashboard();
     });
   });
 }
 
 /* ─────────────────────────────────────────────────────────
- * MEAL EDITOR MODAL (Trust & Counter Override)
+ * OUTSIDE PROTEIN GAP WIDGET
+ * ───────────────────────────────────────────────────────── */
+function renderProteinGapWidget(totals, dateKey) {
+  const container = document.getElementById('outside-supplements-stack');
+  if (!container) return;
+
+  const log = getDayLog(dateKey);
+  const supps = OUTSIDE_SUPPLEMENTS.slice(0, 5);
+
+  container.innerHTML = supps.map(supp => `
+    <div class="supplement-card-v2">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
+        <span style="font-size:13px; font-weight:700; color:#fff;">${supp.name}</span>
+        <span class="task-pill-status in-progress" style="font-size:10px;">${supp.badge}</span>
+      </div>
+      <div style="display:flex; gap:12px; font-size:11.5px; color:var(--ink-2); margin-bottom:6px;">
+        <span style="color:#818cf8; font-weight:600;">+${supp.protein}g Protein</span>
+        <span>${supp.calories} kcal</span>
+        <span style="color:var(--ink-3);">${supp.cost}</span>
+      </div>
+      <div style="font-size:11px; color:var(--ink-3); line-height:1.35; margin-bottom:8px;">${supp.howTo}</div>
+      <button class="btn-control" data-add-supp-id="${supp.id}" style="width:100%; justify-content:center; background:#10b981; color:#fff; border-color:#10b981;">
+        + Log Supplement
+      </button>
+    </div>
+  `).join('');
+
+  // Logged supplements list
+  const loggedContainer = document.getElementById('logged-supplements-list');
+  if (loggedContainer) {
+    const list = log.supplements || [];
+    if (list.length === 0) {
+      loggedContainer.innerHTML = `<span style="font-size:11.5px; color:var(--ink-3); font-style:italic;">No outside supplements logged today.</span>`;
+    } else {
+      loggedContainer.innerHTML = list.map((s, idx) => `
+        <div class="logged-custom-item">
+          <span>💊 <strong>${s.name}</strong> (+${s.protein}g P, ${s.calories} kcal)</span>
+          <button class="btn-remove-item" data-del-supp-idx="${idx}">✕</button>
+        </div>
+      `).join('');
+    }
+
+    loggedContainer.querySelectorAll('[data-del-supp-idx]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-del-supp-idx'), 10);
+        log.supplements.splice(idx, 1);
+        saveState();
+        renderDashboard();
+        showToast('Removed supplement');
+      });
+    });
+  }
+
+  container.querySelectorAll('[data-add-supp-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-add-supp-id');
+      const s = OUTSIDE_SUPPLEMENTS.find(x => x.id === id);
+      if (s) {
+        log.supplements = log.supplements || [];
+        log.supplements.push({ ...s, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+        saveState();
+        renderDashboard();
+        showToast(`Logged ${s.name} (+${s.protein}g Protein)!`);
+      }
+    });
+  });
+}
+
+function renderCustomFoodsList(log, dateKey) {
+  const container = document.getElementById('custom-items-output');
+  if (!container) return;
+
+  const items = log.customFoods || [];
+  if (items.length === 0) {
+    container.innerHTML = `<span style="font-size:11.5px; color:var(--ink-3); font-style:italic;">No extra foods logged.</span>`;
+    return;
+  }
+
+  container.innerHTML = items.map((f, idx) => `
+    <div class="logged-custom-item">
+      <span>🍴 <strong>${f.name}</strong> (${f.calories} cal, ${f.protein}g protein)</span>
+      <button class="btn-remove-item" data-del-custom-idx="${idx}">✕</button>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-del-custom-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-del-custom-idx'), 10);
+      log.customFoods.splice(idx, 1);
+      saveState();
+      renderDashboard();
+      showToast('Removed off-menu food');
+    });
+  });
+}
+
+function renderSleep(log, dateKey) {
+  const hoursInput = document.getElementById('sleep-hours-v2');
+  const weightInput = document.getElementById('morning-weight-v2');
+  if (hoursInput) hoursInput.value = log.sleep?.hours || 7.5;
+  if (weightInput) weightInput.value = log.morningWeight || '';
+}
+
+/* ─────────────────────────────────────────────────────────
+ * MEAL EDITOR MODAL (Trust & Counter Overrides)
  * ───────────────────────────────────────────────────────── */
 function openMealEditor(category, mealsData, dateKey) {
   editingMealCategory = category;
-  const currentItems = mealsData[category] || [];
+  const currentItems = (mealsData && mealsData[category]) || [];
   editingMealItems = JSON.parse(JSON.stringify(currentItems));
 
-  const modal = document.getElementById('mf-meal-edit-modal');
-  const labelEl = document.getElementById('mf-editor-meal-label');
-  if (labelEl) {
-    labelEl.innerText = `${category.toUpperCase()} COUNTER OVERRIDE • ${dateKey}`;
+  const modal = document.getElementById('modal-meal-editor');
+  const pretitle = document.getElementById('editor-meal-pretitle');
+  if (pretitle) {
+    pretitle.innerText = `${category.toUpperCase()} COUNTER OVERRIDE • ${dateKey}`;
   }
 
   renderEditorDishesList();
@@ -613,12 +904,12 @@ function openMealEditor(category, mealsData, dateKey) {
 }
 
 function renderEditorDishesList() {
-  const listEl = document.getElementById('mf-editor-dishes-list');
+  const listEl = document.getElementById('editor-dishes-stack');
   if (!listEl) return;
 
   if (editingMealItems.length === 0) {
     listEl.innerHTML = `
-      <div style="text-align:center; padding:16px; color:#94a3b8; font-size:13px;">
+      <div style="text-align:center; padding:16px; color:var(--ink-3); font-size:12.5px;">
         No dishes in this meal. Add what the mess served below!
       </div>
     `;
@@ -626,23 +917,23 @@ function renderEditorDishesList() {
   }
 
   listEl.innerHTML = editingMealItems.map((item, idx) => `
-    <div class="mf-editor-dish-row">
-      <div class="mf-editor-dish-left">
-        <div style="font-size:18px;">🍲</div>
-        <div class="mf-editor-dish-meta">
-          <div class="mf-editor-dish-name">${item.name}</div>
-          <div class="mf-editor-dish-macros">
+    <div class="logged-custom-item" style="padding:8px 10px; margin-bottom:6px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:16px;">🍲</span>
+        <div>
+          <div style="font-size:13px; font-weight:600; color:#fff;">${item.name}</div>
+          <div style="font-size:11px; color:var(--ink-3); font-family:monospace;">
             ${item.calories} cal • ${item.protein}g P • ${item.unit || '1 serving'}
           </div>
         </div>
       </div>
-      <button class="mf-editor-remove-btn" data-remove-index="${idx}" title="Remove this dish">✕</button>
+      <button class="btn-remove-item" data-remove-editor-idx="${idx}" title="Remove this dish">✕</button>
     </div>
   `).join('');
 
-  listEl.querySelectorAll('[data-remove-index]').forEach(btn => {
+  listEl.querySelectorAll('[data-remove-editor-idx]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const idx = parseInt(btn.getAttribute('data-remove-index'), 10);
+      const idx = parseInt(btn.getAttribute('data-remove-editor-idx'), 10);
       const removed = editingMealItems.splice(idx, 1);
       renderEditorDishesList();
       showToast(`Removed ${removed[0]?.name || 'dish'}`);
@@ -659,349 +950,176 @@ function addDishToEditor(dishName) {
 }
 
 /* ─────────────────────────────────────────────────────────
- * SEARCH DRAWER LATEST ITEMS (Screenshot 2)
- * ───────────────────────────────────────────────────────── */
-function renderSearchSheetItems(log, dateKey) {
-  const container = document.getElementById('mf-sheet-latest-list');
-  if (!container) return;
-
-  const latestItems = [
-    { name: "Egg Fried", calories: 90, protein: 6.0, fat: 7.0, carbs: 0.0, unit: "1 egg (46 g)", icon: "🍳" },
-    { name: "Greek Yogurt", calories: 49, protein: 5.0, fat: 3.0, carbs: 2.0, unit: "50 ml (50.72 g)", icon: "🥣" },
-    { name: "1 Scoop Whey Protein (with water)", calories: 120, protein: 24.0, fat: 1.5, carbs: 2.0, unit: "1 scoop (30g)", icon: "💊" },
-    { name: "3 Boiled Eggs (Campus Tapri)", calories: 215, protein: 18.0, fat: 15.0, carbs: 1.5, unit: "3 eggs", icon: "🥚" },
-    { name: "Amul High Protein Lassi / Buttermilk", calories: 110, protein: 15.0, fat: 1.5, carbs: 8.0, unit: "200 ml", icon: "🥛" },
-    { name: "Chana Sattu Drink with Lemon", calories: 165, protein: 10.5, fat: 2.2, carbs: 26.0, unit: "1 glass", icon: "🥤" },
-    { name: "Roasted Chana / Bhuna Chana", calories: 185, protein: 9.5, fat: 3.0, carbs: 28.0, unit: "50 g", icon: "🥜" },
-    { name: "Canteen Maggi", calories: 310, protein: 6.0, fat: 12.0, carbs: 46.0, unit: "1 plate", icon: "🍜" },
-    { name: "Canteen Bread Omelette", calories: 340, protein: 16.0, fat: 18.0, carbs: 28.0, unit: "2 slices", icon: "🥪" },
-    { name: "Banana, Fresh", calories: 105, protein: 1.3, fat: 0.3, carbs: 27.0, unit: "1 medium", icon: "🍌" }
-  ];
-
-  container.innerHTML = latestItems.map(item => `
-    <div class="mf-latest-food-row">
-      <div class="mf-latest-left">
-        <div class="mf-food-emoji-box">${item.icon}</div>
-        <div>
-          <div class="mf-latest-name">${item.name}</div>
-          <div class="mf-latest-macros">
-            ${item.calories}🔥  ${item.protein}P  ${item.fat}F  ${item.carbs}C  •  ${item.unit}
-          </div>
-        </div>
-      </div>
-      <button class="mf-plus-circle-btn" data-add-quick="${item.name}" title="Add to Today">+</button>
-    </div>
-  `).join('');
-
-  container.querySelectorAll('[data-add-quick]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const name = btn.getAttribute('data-add-quick');
-      const item = latestItems.find(x => x.name === name);
-      if (item) {
-        log.supplements = log.supplements || [];
-        log.supplements.push({
-          id: 'item_' + Date.now(),
-          name: item.name,
-          calories: item.calories,
-          protein: item.protein,
-          fat: item.fat,
-          carbs: item.carbs,
-          unit: item.unit
-        });
-        saveState();
-        renderDashboard();
-        showToast(`Logged ${item.name} (+${item.protein}g Protein)!`);
-      }
-    });
-  });
-}
-
-/* ─────────────────────────────────────────────────────────
- * EVENT LISTENERS & MODAL INTERACTIVITY
+ * EVENT LISTENERS
  * ───────────────────────────────────────────────────────── */
 function setupEventListeners() {
-  const searchBackdrop = document.getElementById('mf-search-backdrop');
-  const btnFloatingLog = document.getElementById('mf-floating-log-btn');
-  const btnNavSearch = document.getElementById('nav-btn-search');
-  const btnNavQuickAdd = document.getElementById('nav-btn-quickadd');
-  const btnCloseSearch = document.getElementById('btn-close-search');
-  const btnDoneSearch = document.getElementById('btn-done-search');
+  // Plate meal toggle
+  document.querySelectorAll('.plate-tab-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activePlateMeal = btn.getAttribute('data-meal');
+      const dateKey = formatDateKey(selectedDate);
+      const log = getDayLog(dateKey);
+      renderPlateVisualizer(currentMenuResult?.meals, log);
+    });
+  });
 
-  // Open Search Drawer (Screenshot 2)
-  const openSearch = () => {
-    if (searchBackdrop) searchBackdrop.classList.add('open');
-  };
-  const closeSearch = () => {
-    if (searchBackdrop) searchBackdrop.classList.remove('open');
-  };
+  // Custom food add button (Off-Menu / Canteen)
+  const addBtn = document.getElementById('btn-add-canteen-food');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const nameInput = document.getElementById('input-canteen-name');
+      const calInput = document.getElementById('input-canteen-cal');
+      const proInput = document.getElementById('input-canteen-pro');
 
-  if (btnFloatingLog) btnFloatingLog.addEventListener('click', openSearch);
-  if (btnNavSearch) btnNavSearch.addEventListener('click', openSearch);
-  if (btnNavQuickAdd) btnNavQuickAdd.addEventListener('click', openSearch);
-  if (btnCloseSearch) btnCloseSearch.addEventListener('click', closeSearch);
-  if (btnDoneSearch) btnDoneSearch.addEventListener('click', closeSearch);
+      const name = nameInput.value.trim();
+      const calories = parseFloat(calInput.value) || 0;
+      const protein = parseFloat(proInput.value) || 0;
 
-  if (searchBackdrop) {
-    searchBackdrop.addEventListener('click', (e) => {
-      if (e.target === searchBackdrop) closeSearch();
+      if (!name) {
+        alert('Please enter a food name');
+        return;
+      }
+
+      const dateKey = formatDateKey(selectedDate);
+      const log = getDayLog(dateKey);
+      log.customFoods = log.customFoods || [];
+      log.customFoods.push({
+        id: 'cust_' + Date.now(),
+        name,
+        calories,
+        protein,
+        carbs: Math.round(calories * 0.12),
+        fat: Math.round(calories * 0.04)
+      });
+
+      nameInput.value = '';
+      calInput.value = '';
+      proInput.value = '';
+
+      saveState();
+      renderDashboard();
+      showToast(`Logged ${name}!`);
     });
   }
 
-  // Live Sync Re-fetch Button
-  const btnSyncRefresh = document.getElementById('btn-sync-refresh');
-  if (btnSyncRefresh) {
-    btnSyncRefresh.addEventListener('click', () => {
-      showToast('Connecting to Poornima University Firestore...');
-      renderDashboard(true);
+  // Quick Chips
+  const chipsContainer = document.getElementById('canteen-chips-row');
+  if (chipsContainer) {
+    chipsContainer.innerHTML = CANTEEN_ITEMS.slice(0, 10).map(c => `
+      <button class="chip-btn" data-name="${c.name}" data-cal="${c.calories}" data-pro="${c.protein}">
+        + ${c.name} (${c.calories} cal)
+      </button>
+    `).join('');
+
+    chipsContainer.querySelectorAll('.chip-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('input-canteen-name').value = btn.getAttribute('data-name');
+        document.getElementById('input-canteen-cal').value = btn.getAttribute('data-cal');
+        document.getElementById('input-canteen-pro').value = btn.getAttribute('data-pro');
+      });
     });
   }
 
-  // Meal Editor Handlers
-  const mealEditModal = document.getElementById('mf-meal-edit-modal');
-  const btnCloseMealEditor = document.getElementById('btn-close-meal-editor');
-  const btnSaveMealOverride = document.getElementById('btn-editor-save-meal');
-  const btnResetMealOverride = document.getElementById('btn-editor-reset-meal');
-  const editorAddInput = document.getElementById('mf-editor-add-input');
-  const btnEditorAddDish = document.getElementById('btn-editor-add-dish');
+  // Sleep save
+  const saveSleepBtn = document.getElementById('btn-save-sleep-v2');
+  if (saveSleepBtn) {
+    saveSleepBtn.addEventListener('click', () => {
+      const hours = parseFloat(document.getElementById('sleep-hours-v2').value) || 7.5;
+      const weight = document.getElementById('morning-weight-v2').value.trim();
 
-  if (btnCloseMealEditor && mealEditModal) {
-    btnCloseMealEditor.addEventListener('click', () => mealEditModal.classList.remove('open'));
-  }
-  if (mealEditModal) {
-    mealEditModal.addEventListener('click', (e) => {
-      if (e.target === mealEditModal) mealEditModal.classList.remove('open');
+      const dateKey = formatDateKey(selectedDate);
+      const log = getDayLog(dateKey);
+      log.sleep = { hours };
+      log.morningWeight = weight;
+
+      saveState();
+      renderDashboard();
+      showToast('Sleep & Weight saved!');
     });
   }
 
-  if (btnEditorAddDish && editorAddInput) {
+  // Force Sync Button
+  const syncBtn = document.getElementById('btn-force-sync');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', async () => {
+      showToast('Connecting directly to Poornima University Firestore...');
+      await renderDashboard(true);
+      renderISTSyncStatus();
+      showToast('Synced with Poornima University DB!');
+    });
+  }
+
+  // Meal Editor Modal handlers
+  const modalEditor = document.getElementById('modal-meal-editor');
+  const btnCloseEditor = document.getElementById('btn-close-editor');
+  const btnSaveEditor = document.getElementById('btn-editor-save');
+  const btnResetEditor = document.getElementById('btn-editor-reset');
+  const editorInput = document.getElementById('editor-input-dish');
+  const btnEditorAdd = document.getElementById('btn-editor-add-dish');
+
+  if (btnCloseEditor && modalEditor) {
+    btnCloseEditor.addEventListener('click', () => modalEditor.classList.remove('open'));
+  }
+  if (modalEditor) {
+    modalEditor.addEventListener('click', (e) => {
+      if (e.target === modalEditor) modalEditor.classList.remove('open');
+    });
+  }
+
+  if (btnEditorAdd && editorInput) {
     const handleAdd = () => {
-      const val = editorAddInput.value.trim();
+      const val = editorInput.value.trim();
       if (val) {
         addDishToEditor(val);
-        editorAddInput.value = '';
+        editorInput.value = '';
       }
     };
-    btnEditorAddDish.addEventListener('click', handleAdd);
-    editorAddInput.addEventListener('keydown', (e) => {
+    btnEditorAdd.addEventListener('click', handleAdd);
+    editorInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handleAdd();
     });
   }
 
-  // Preset Chips
-  document.querySelectorAll('.mf-preset-chip').forEach(chip => {
+  // Preset chips in modal
+  document.querySelectorAll('.preset-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const preset = chip.getAttribute('data-preset');
       if (preset) addDishToEditor(preset);
     });
   });
 
-  if (btnSaveMealOverride) {
-    btnSaveMealOverride.addEventListener('click', () => {
+  if (btnSaveEditor) {
+    btnSaveEditor.addEventListener('click', async () => {
       const dateKey = formatDateKey(selectedDate);
       saveMealOverride(dateKey, editingMealCategory, editingMealItems, appState, saveState);
-      if (mealEditModal) mealEditModal.classList.remove('open');
-      renderDashboard();
+      if (modalEditor) modalEditor.classList.remove('open');
+      await renderDashboard();
       showToast(`Saved verified ${editingMealCategory}!`);
     });
   }
 
-  if (btnResetMealOverride) {
-    btnResetMealOverride.addEventListener('click', () => {
+  if (btnResetEditor) {
+    btnResetEditor.addEventListener('click', async () => {
       const dateKey = formatDateKey(selectedDate);
       resetMealOverride(dateKey, editingMealCategory, appState, saveState);
-      if (mealEditModal) mealEditModal.classList.remove('open');
-      renderDashboard(true);
+      if (modalEditor) modalEditor.classList.remove('open');
+      await renderDashboard(true);
       showToast(`Reset ${editingMealCategory} to live mess schedule.`);
-    });
-  }
-
-  // Search input typing & enter
-  const searchInput = document.getElementById('mf-search-input');
-  if (searchInput) {
-    searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const val = searchInput.value.trim();
-        if (val) {
-          const dateKey = formatDateKey(selectedDate);
-          const log = getDayLog(dateKey);
-          log.customFoods = log.customFoods || [];
-          log.customFoods.push({
-            id: 'c_' + Date.now(),
-            name: val,
-            calories: 220,
-            protein: 8,
-            fat: 6,
-            carbs: 26
-          });
-          saveState();
-          searchInput.value = '';
-          closeSearch();
-          renderDashboard();
-          showToast(`Logged ${val}!`);
-        }
-      }
-    });
-  }
-
-  // 6-Compartment Thali Modal
-  const thaliModal = document.getElementById('mf-thali-modal');
-  const btnOpenThali = document.getElementById('btn-open-thali');
-  const btnCloseThali = document.getElementById('btn-close-thali');
-
-  if (btnOpenThali && thaliModal) {
-    btnOpenThali.addEventListener('click', () => thaliModal.classList.add('open'));
-  }
-  if (btnCloseThali && thaliModal) {
-    btnCloseThali.addEventListener('click', () => thaliModal.classList.remove('open'));
-  }
-  if (thaliModal) {
-    thaliModal.addEventListener('click', (e) => {
-      if (e.target === thaliModal) thaliModal.classList.remove('open');
-    });
-  }
-
-  // Top Calorie Pill -> Opens Nutrients Breakdown (Screenshot 5)
-  const calPill = document.getElementById('mf-calorie-pill');
-  const nutrientsModal = document.getElementById('mf-nutrients-modal');
-  const btnBackNutrients = document.getElementById('btn-back-nutrients');
-  const btnNutrientsDone = document.getElementById('btn-nutrients-done');
-
-  if (calPill && nutrientsModal) {
-    calPill.addEventListener('click', () => nutrientsModal.classList.add('open'));
-  }
-  if (btnBackNutrients && nutrientsModal) {
-    btnBackNutrients.addEventListener('click', () => nutrientsModal.classList.remove('open'));
-  }
-  if (btnNutrientsDone && nutrientsModal) {
-    btnNutrientsDone.addEventListener('click', () => nutrientsModal.classList.remove('open'));
-  }
-
-  // Recipe Builder Modal (Screenshots 4 & 3)
-  const recipeModal = document.getElementById('mf-recipe-modal');
-  const navBtnAi = document.getElementById('nav-btn-ai');
-  const navBtnLibrary = document.getElementById('nav-btn-library');
-  const btnBackRecipe1 = document.getElementById('btn-back-recipe-1');
-  const btnBackRecipe2 = document.getElementById('btn-back-recipe-2');
-  const btnRecipeNext1 = document.getElementById('btn-recipe-next-1');
-  const stepView1 = document.getElementById('recipe-step-1');
-  const stepView2 = document.getElementById('recipe-step-2');
-  const btnCreateOnly = document.getElementById('btn-recipe-create-only');
-  const btnCreateAndAdd = document.getElementById('btn-recipe-create-and-add');
-
-  const openRecipeBuilder = () => {
-    if (recipeModal) {
-      recipeModal.classList.add('open');
-      if (stepView1) stepView1.classList.add('active');
-      if (stepView2) stepView2.classList.remove('active');
-    }
-  };
-
-  if (navBtnAi) navBtnAi.addEventListener('click', openRecipeBuilder);
-  if (navBtnLibrary) navBtnLibrary.addEventListener('click', openRecipeBuilder);
-
-  if (btnBackRecipe1 && recipeModal) {
-    btnBackRecipe1.addEventListener('click', () => recipeModal.classList.remove('open'));
-  }
-
-  if (btnRecipeNext1 && stepView1 && stepView2) {
-    btnRecipeNext1.addEventListener('click', () => {
-      stepView1.classList.remove('active');
-      stepView2.classList.add('active');
-      const name = document.getElementById('recipe-input-name')?.value || 'New Recipe';
-      const previewTitle = document.getElementById('preview-recipe-title');
-      if (previewTitle) previewTitle.innerText = name;
-    });
-  }
-
-  if (btnBackRecipe2 && stepView1 && stepView2) {
-    btnBackRecipe2.addEventListener('click', () => {
-      stepView2.classList.remove('active');
-      stepView1.classList.add('active');
-    });
-  }
-
-  const handleRecipeDone = (addFood) => {
-    if (recipeModal) recipeModal.classList.remove('open');
-    if (addFood) {
-      const dateKey = formatDateKey(selectedDate);
-      const log = getDayLog(dateKey);
-      const name = document.getElementById('recipe-input-name')?.value || 'Custom Recipe';
-      log.customFoods = log.customFoods || [];
-      log.customFoods.push({
-        id: 'rec_' + Date.now(),
-        name: name,
-        calories: 320,
-        protein: 15,
-        fat: 10,
-        carbs: 35
-      });
-      saveState();
-      renderDashboard();
-      showToast(`Created & Logged ${name}!`);
-    } else {
-      showToast(`Recipe saved to Library!`);
-    }
-  };
-
-  if (btnCreateOnly) btnCreateOnly.addEventListener('click', () => handleRecipeDone(false));
-  if (btnCreateAndAdd) btnCreateAndAdd.addEventListener('click', () => handleRecipeDone(true));
-
-  // Description character counter (Screenshot 3)
-  const descInput = document.getElementById('recipe-desc');
-  const descCounter = document.getElementById('recipe-desc-count');
-  if (descInput && descCounter) {
-    descInput.addEventListener('input', () => {
-      descCounter.innerText = `${descInput.value.length}/1500`;
-    });
-  }
-
-  // Up Chevron: Scroll to top (Screenshot 1)
-  const btnUp = document.getElementById('btn-header-up');
-  if (btnUp) {
-    btnUp.addEventListener('click', () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  }
-
-  // Time Pill: Show IST status
-  const timePill = document.getElementById('mf-time-pill');
-  if (timePill) {
-    timePill.addEventListener('click', () => {
-      const ist = getISTDate();
-      const timeStr = ist.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const isSafe = isWithinSafeSyncWindow();
-      showToast(`IST: ${timeStr} • ${isSafe ? 'Sync Window 06:00–23:59 Active' : 'Overnight Anchor Active'}`);
-    });
-  }
-
-  // Header Close: Reset day log demo
-  const btnClose = document.getElementById('btn-header-close');
-  if (btnClose) {
-    btnClose.addEventListener('click', () => {
-      showToast('Poornima Mess Deficit Tracker Active (1600–1800 kcal)');
-    });
-  }
-
-  // Scan tab toast
-  const navBtnScan = document.getElementById('nav-btn-scan');
-  if (navBtnScan) {
-    navBtnScan.addEventListener('click', () => {
-      showToast('Scan Barcode: Point at hostel snack packaging');
     });
   }
 }
 
-function showToast(msg) {
-  let t = document.getElementById('mf-app-toast');
+export function showToast(msg) {
+  let t = document.getElementById('web-app-toast');
   if (!t) {
     t = document.createElement('div');
-    t.id = 'mf-app-toast';
-    t.className = 'mf-toast';
+    t.id = 'web-app-toast';
+    t.className = 'web-toast';
     document.body.appendChild(t);
   }
   t.innerText = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+  setTimeout(() => t.classList.remove('show'), 2400);
 }
 
 document.addEventListener('DOMContentLoaded', () => {

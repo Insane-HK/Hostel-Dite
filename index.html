@@ -2,652 +2,283 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>MacroFactor • Poornima Deficit & Protein Companion</title>
-  <meta name="description" content="MacroFactor style AI Plate calorie deficit tracker for Poornima University mess menu">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poornima Mess Deficit & Protein Companion (IST Protected)</title>
+  <meta name="description" content="Personal hostel calorie deficit tracker calibrated for Poornima University mess menu with IST 6AM-12AM sync guard, 6-compartment tray guide, and outside protein gap supplements.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
-  <!-- Centered Studio Container (MacroFactor iOS App Viewport) -->
-  <div class="mf-app-viewport" id="mf-app-viewport">
-    
-    <!-- iOS Status Bar (Screenshot 1 - 5) -->
-    <div class="ios-status-bar">
-      <span class="ios-time">9:41</span>
-      <div class="ios-status-icons">
-        <span class="ios-signal">
-          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor">
-            <rect x="0" y="8" width="3" height="3" rx="0.5"/>
-            <rect x="4.5" y="5.5" width="3" height="5.5" rx="0.5"/>
-            <rect x="9" y="3" width="3" height="8" rx="0.5"/>
-            <rect x="13.5" y="0" width="3" height="11" rx="0.5"/>
-          </svg>
-        </span>
-        <span class="ios-wifi">
-          <svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M1 3.5C4.5 0.5 10.5 0.5 14 3.5"/>
-            <path d="M3.5 6.5C6 4.5 9 4.5 11.5 6.5"/>
-            <circle cx="7.5" cy="9.5" r="1.2" fill="currentColor"/>
-          </svg>
-        </span>
-        <span class="ios-battery">
-          <svg width="22" height="11" viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.6" rx="3">
-            <rect x="1" y="1" width="19" height="10" rx="2.5"/>
-            <rect x="2.5" y="2.5" width="13" height="7" rx="1.5" fill="currentColor"/>
-            <path d="M21.5 4.5v3" stroke-linecap="round"/>
-          </svg>
-        </span>
-      </div>
-    </div>
-
-    <!-- MAIN VIEW: AI Plate (Screenshot 1) -->
-    <div class="mf-screen-view active" id="view-ai-plate">
-      <!-- Top Header Bar (Screenshot 1) -->
-      <header class="mf-top-header">
-        <button class="mf-circle-btn" id="btn-header-close" title="Reset / Close">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
+  <div class="app-shell">
+    <!-- Collapsible Sidebar Navigation (Inspired by User's SidebarNav) -->
+    <aside id="sidebar-nav" class="sidebar-nav" aria-label="Workspace Navigation">
+      <div class="sidebar-header">
+        <button class="workspace-control" type="button" title="Poornima University Hostel Operations">
+          <div class="workspace-monogram">P</div>
+          <span class="workspace-label">Poornima Ops</span>
         </button>
-
-        <button class="mf-time-pill" id="mf-time-pill" title="IST Meal Timing">
-          2 PM
-        </button>
-
-        <!-- Calorie Pill with Circular Progress Arc (Screenshot 1) -->
-        <button class="mf-calorie-pill" id="mf-calorie-pill" title="Click to view full Nutrients breakdown">
-          <div class="mf-calorie-arc-wrap">
-            <svg class="mf-calorie-arc-svg" viewBox="0 0 36 36">
-              <circle class="mf-arc-bg" cx="18" cy="18" r="15"/>
-              <circle class="mf-arc-val" id="mf-header-arc-fill" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="30"/>
-            </svg>
-          </div>
-          <span class="mf-calorie-text" id="mf-header-calorie-text">1465 / 1700</span>
-        </button>
-
-        <!-- Thali / Dish Circle Icon Button (Opens 6-Compartment Tray Blueprint) -->
-        <button class="mf-circle-btn" id="btn-open-thali" title="6-Compartment Mess Thali Guide">
-          <span style="font-size: 19px; line-height: 1;">🥗</span>
-        </button>
-
-        <!-- Up Chevron Circle Button (Screenshot 1) -->
-        <button class="mf-circle-btn" id="btn-header-up" title="Scroll to Top">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <path d="M12 19V5M5 12l7-7 7 7"/>
+        <button id="btn-toggle-sidebar" class="btn-sidebar-collapse" title="Collapse or Expand Sidebar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
           </svg>
-        </button>
-      </header>
-
-      <!-- Minimal Day Selector Carousel -->
-      <div class="mf-day-carousel" id="mf-day-carousel">
-        <!-- Injected via JavaScript (Yesterday, Today, Sun 6, Mon 7...) -->
-      </div>
-
-      <!-- Live Sync / Food Trust Status Bar -->
-      <div class="mf-sync-status-bar" id="mf-sync-status-bar">
-        <div class="mf-sync-left">
-          <span class="mf-sync-dot live" id="mf-sync-dot"></span>
-          <span class="mf-sync-label" id="mf-sync-label">Checking Poornima Mess Menu...</span>
-        </div>
-        <button class="mf-sync-refresh-btn" id="btn-sync-refresh" title="Re-sync from Poornima Mess Database">
-          <svg class="mf-sync-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-          </svg>
-          <span>Sync</span>
         </button>
       </div>
 
-      <!-- Main Title (Screenshot 1) -->
-      <div class="mf-title-section">
-        <h1 class="mf-ai-plate-title">AI Plate</h1>
-      </div>
-
-      <!-- Meal Cards Stack (Screenshot 1: Lunch, Dinner, Breakfast, Snacks) -->
-      <main class="mf-plate-content" id="mf-meals-stack">
-        <!-- Injected via JavaScript -->
-      </main>
-
-      <!-- Floating "Log Foods" Button (Screenshot 1) -->
-      <button class="mf-floating-log-btn" id="mf-floating-log-btn">
-        Log Foods
-      </button>
-
-      <!-- Bottom Navigation Bar (Screenshot 1 & 2) -->
-      <nav class="mf-bottom-nav">
-        <button class="mf-nav-tab" id="nav-btn-scan">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
-            <line x1="7" y1="12" x2="17" y2="12"/>
-          </svg>
-          <span>Scan</span>
-        </button>
-        <button class="mf-nav-tab" id="nav-btn-search">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-          </svg>
-          <span>Search</span>
-        </button>
-        <button class="mf-nav-tab" id="nav-btn-ai">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
-          </svg>
-          <span>AI</span>
-        </button>
-        <button class="mf-nav-tab" id="nav-btn-quickadd">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>
-            <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>
-          </svg>
-          <span>Quick Add</span>
-        </button>
-        <button class="mf-nav-tab" id="nav-btn-library">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/>
-            <path d="M6 6h10M6 10h10"/>
-          </svg>
-          <span>Library</span>
-        </button>
+      <nav class="sidebar-group" aria-label="Primary Views">
+        <a href="#today" class="sidebar-row active">
+          <span class="sidebar-icon">🥗</span>
+          <span class="sidebar-copy">Today's Meals</span>
+          <span class="sidebar-count">Live</span>
+        </a>
+        <a href="#tray-guide" class="sidebar-row">
+          <span class="sidebar-icon">🍽️</span>
+          <span class="sidebar-copy">6-Compartment Tray</span>
+        </a>
+        <a href="#outside-protein" class="sidebar-row">
+          <span class="sidebar-icon">💊</span>
+          <span class="sidebar-copy">Protein Pantry</span>
+          <span class="sidebar-count">80g</span>
+        </a>
+        <a href="#canteen-log" class="sidebar-row">
+          <span class="sidebar-icon">✍️</span>
+          <span class="sidebar-copy">Canteen Logger</span>
+        </a>
+        <a href="#sleep-log" class="sidebar-row">
+          <span class="sidebar-icon">🌙</span>
+          <span class="sidebar-copy">Sleep & Recovery</span>
+        </a>
       </nav>
 
-      <!-- Bottom Mobbin Footer Branding (Screenshots 1 - 5) -->
-      <div class="mf-mobbin-footer">
-        <div class="mf-mobbin-left">
-          <div class="mf-logo-mark">ML</div>
-          <span>MacroFactor</span>
-        </div>
-        <div class="mf-mobbin-right">
-          <span>curated by</span>
-          <strong class="mf-mobbin-text">Mobbin</strong>
+      <div class="sidebar-footer">
+        <div class="deficit-mode-card">
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #10b981; margin-bottom: 3px;">
+            Target Mode: Active
+          </div>
+          <div style="font-size: 12px; color: var(--ink-2);">
+            1600–1800 kcal • 60–95g P
+          </div>
         </div>
       </div>
-    </div>
+    </aside>
 
-    <!-- MODAL / SHEET: Search Drawer (Screenshot 2) -->
-    <div class="mf-bottom-sheet-backdrop" id="mf-search-backdrop">
-      <div class="mf-search-sheet">
-        <!-- Top Controls (Screenshot 2: Fork icon + Down Arrow) -->
-        <div class="mf-sheet-top-bar">
-          <div class="mf-sheet-fork-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M18 2v8a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V2"/>
-              <path d="M6 2v6M10 2v6M14 2v6M18 2v6"/>
-              <path d="M12 13v9"/>
-            </svg>
+    <!-- Main Content Area -->
+    <div class="workspace-main">
+      <!-- Top Application Header -->
+      <header class="top-app-bar">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <h1 style="font-family: var(--font-heading); font-size: 17px; font-weight: 700; color: #fff;">
+            Poornima Mess Deficit Tracker
+          </h1>
+          <div id="ist-sync-badge" class="ist-sync-badge">
+            <!-- Injected via JS with live sync status -->
           </div>
-          <button class="mf-sheet-down-btn" id="btn-close-search" title="Close Drawer">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <path d="m6 9 6 6 6-6"/>
-            </svg>
+        </div>
+
+        <div class="top-actions">
+          <button id="btn-force-sync" class="btn-control" title="Re-sync directly from Poornima Firestore Database">
+            <span class="sync-icon-spin" id="sync-icon-spin">🔄</span> Sync Poornima (IST)
           </button>
         </div>
-
-        <div class="mf-sheet-drag-handle"></div>
-
-        <!-- Sheet Tabs (Screenshot 2: Scan, Search, AI, Quick Add, Library) -->
-        <div class="mf-sheet-tabs-row">
-          <button class="mf-sheet-tab-btn" data-tab="scan">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
-            Scan
-          </button>
-          <button class="mf-sheet-tab-btn active" data-tab="search">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            Search
-          </button>
-          <button class="mf-sheet-tab-btn" data-tab="ai">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-            AI
-          </button>
-          <button class="mf-sheet-tab-btn" data-tab="quickadd">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
-            Quick Add
-          </button>
-          <button class="mf-sheet-tab-btn" data-tab="library">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
-            Library
-          </button>
-        </div>
-
-        <!-- Latest Foods Section (Screenshot 2) -->
-        <div class="mf-sheet-scrollable-content">
-          <div class="mf-sheet-section-title">Latest</div>
-
-          <div class="mf-latest-foods-list" id="mf-sheet-latest-list">
-            <!-- Injected via JavaScript (Egg Fried, Greek Yogurt, Whey, Tapri Eggs...) -->
-          </div>
-        </div>
-
-        <!-- Floating Bottom Search Capsule & Done Button (Screenshot 2) -->
-        <div class="mf-sheet-bottom-search-bar">
-          <div class="mf-search-capsule">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.2" stroke-linecap="round">
-              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-            </svg>
-            <input type="text" id="mf-search-input" placeholder="Search for a food" autocomplete="off" />
-          </div>
-          <button class="mf-btn-done" id="btn-done-search">Done</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL / VIEW: Build Your Recipe & Recipe Preparation (Screenshots 4 & 3) -->
-    <div class="mf-fullscreen-modal" id="mf-recipe-modal">
-      <!-- Recipe Step 1: Build your recipe (Screenshot 4) -->
-      <div class="mf-recipe-step-view active" id="recipe-step-1">
-        <header class="mf-recipe-header">
-          <button class="mf-back-btn" id="btn-back-recipe-1">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <path d="m15 18-6-6 6-6"/>
-            </svg>
-          </button>
-          <span class="mf-recipe-header-title">Create Recipe</span>
-          <div style="width: 24px;"></div>
-        </header>
-
-        <!-- Top Progress Step Bar (Screenshot 4) -->
-        <div class="mf-recipe-step-bar">
-          <div class="mf-recipe-step-fill" style="width: 50%;"></div>
-        </div>
-
-        <div class="mf-recipe-body">
-          <h2 class="mf-recipe-main-heading">Build your recipe</h2>
-
-          <!-- Recipe Name (Required) -->
-          <div class="mf-form-group">
-            <div class="mf-form-label-row">
-              <label class="mf-form-label">Recipe Name</label>
-              <span class="mf-form-required">Required</span>
-            </div>
-            <input type="text" class="mf-input-box" id="recipe-input-name" value="Peanut Butter Banana Smoothie" />
-          </div>
-
-          <!-- Serving Quantity (Required) -->
-          <div class="mf-form-group">
-            <div class="mf-form-label-row">
-              <label class="mf-form-label">Serving Quantity</label>
-              <span class="mf-form-required">Required</span>
-            </div>
-            <input type="number" class="mf-input-box" id="recipe-input-servings" value="4" min="1" />
-          </div>
-
-          <!-- Total Weight -->
-          <div class="mf-form-group">
-            <label class="mf-form-label">Total Weight</label>
-            <div class="mf-input-with-unit">
-              <input type="text" class="mf-input-box" id="recipe-input-weight" placeholder="Enter weight after preparation" />
-              <span class="mf-input-unit">g</span>
-            </div>
-            <div class="mf-form-hint">Weight for all servings this recipe makes combined</div>
-          </div>
-
-          <!-- Ingredients Section (Screenshot 4) -->
-          <div class="mf-recipe-ingredients-section">
-            <div class="mf-recipe-ing-header">
-              <div>
-                <div class="mf-recipe-ing-title">Ingredients</div>
-                <div class="mf-recipe-ing-subtitle" id="recipe-ing-weight-text">Weight of ingredients is 1174 g</div>
-              </div>
-              <button class="mf-plus-circle-btn" id="btn-recipe-add-ing">+</button>
-            </div>
-
-            <div class="mf-recipe-ing-list" id="recipe-ing-list">
-              <!-- Banana, Milk, Peanut Butter (Screenshot 4) -->
-              <div class="mf-recipe-ing-item">
-                <div class="mf-recipe-ing-icon">🍌</div>
-                <div class="mf-recipe-ing-meta">
-                  <div class="mf-recipe-ing-name">Banana, Fresh</div>
-                  <div class="mf-recipe-ing-sub">208🔥  2P  1F  54C  •  236 g</div>
-                </div>
-                <div class="mf-serving-pill">
-                  <span class="mf-qty">2</span>
-                  <span class="mf-unit">banana</span>
-                </div>
-              </div>
-
-              <div class="mf-recipe-ing-item">
-                <div class="mf-recipe-ing-icon">🥛</div>
-                <div class="mf-recipe-ing-meta">
-                  <div class="mf-recipe-ing-name">Milk, Whole</div>
-                  <div class="mf-recipe-ing-sub">293🔥  16P  16F  23C  •  488 g</div>
-                </div>
-                <div class="mf-serving-pill">
-                  <span class="mf-qty">2</span>
-                  <span class="mf-unit">cup</span>
-                </div>
-              </div>
-
-              <div class="mf-recipe-ing-item">
-                <div class="mf-recipe-ing-icon">🥜</div>
-                <div class="mf-recipe-ing-meta">
-                  <div class="mf-recipe-ing-name">Peanut Butter Smooth</div>
-                  <div class="mf-recipe-ing-sub">753🔥  28P  63F  21C  •  128 g</div>
-                </div>
-                <div class="mf-serving-pill">
-                  <span class="mf-qty">0.5</span>
-                  <span class="mf-unit">cup</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Sticky Bottom Next Button (Screenshot 4) -->
-        <div class="mf-recipe-bottom-bar">
-          <button class="mf-btn-black-pill" id="btn-recipe-next-1">Next</button>
-        </div>
-      </div>
-
-      <!-- Recipe Step 2: Preparation (optional) (Screenshot 3) -->
-      <div class="mf-recipe-step-view" id="recipe-step-2">
-        <header class="mf-recipe-header">
-          <button class="mf-back-btn" id="btn-back-recipe-2">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <path d="m15 18-6-6 6-6"/>
-            </svg>
-          </button>
-          <span class="mf-recipe-header-title">Create Recipe</span>
-          <div style="width: 24px;"></div>
-        </header>
-
-        <!-- Top Progress Step Bar (Screenshot 3: Almost full) -->
-        <div class="mf-recipe-step-bar">
-          <div class="mf-recipe-step-fill" style="width: 90%;"></div>
-        </div>
-
-        <div class="mf-recipe-body">
-          <h2 class="mf-recipe-main-heading">Preparation (optional)</h2>
-
-          <!-- "Your New Recipe" Card (Screenshot 3) -->
-          <div class="mf-form-label" style="margin-bottom: 8px;">Your New Recipe</div>
-          <div class="mf-new-recipe-card">
-            <div class="mf-recipe-card-icon">🥞</div>
-            <div class="mf-recipe-card-info">
-              <div class="mf-recipe-card-title" id="preview-recipe-title">Blueberry Pancakes</div>
-              <div class="mf-recipe-card-sub" id="preview-recipe-sub">49🔥  3P  2F  5C  •  1 serving (28 g)</div>
-            </div>
-            <button class="mf-btn-edit-icon" id="btn-edit-recipe-icon">Edit Icon</button>
-          </div>
-
-          <!-- Preparation Time -->
-          <div class="mf-form-group">
-            <label class="mf-form-label">Preparation Time</label>
-            <div class="mf-input-with-unit">
-              <input type="number" class="mf-input-box" placeholder="Enter preparation time" id="recipe-prep-time" />
-              <span class="mf-input-unit">min</span>
-            </div>
-          </div>
-
-          <!-- Cooking Time -->
-          <div class="mf-form-group">
-            <label class="mf-form-label">Cooking Time</label>
-            <div class="mf-input-with-unit">
-              <input type="number" class="mf-input-box" placeholder="Enter cooking time" id="recipe-cook-time" />
-              <span class="mf-input-unit">min</span>
-            </div>
-          </div>
-
-          <!-- Link -->
-          <div class="mf-form-group">
-            <label class="mf-form-label">Link</label>
-            <input type="url" class="mf-input-box" placeholder="Enter link to the recipe" id="recipe-link" />
-          </div>
-
-          <!-- Description -->
-          <div class="mf-form-group">
-            <div class="mf-form-label-row">
-              <label class="mf-form-label">Description</label>
-              <span class="mf-char-counter" id="recipe-desc-count">0/1500</span>
-            </div>
-            <textarea class="mf-textarea-box" placeholder="Describe the recipe" id="recipe-desc" maxlength="1500"></textarea>
-          </div>
-        </div>
-
-        <!-- Sticky Bottom Double Buttons (Screenshot 3) -->
-        <div class="mf-recipe-bottom-bar double-buttons">
-          <button class="mf-btn-gray-pill" id="btn-recipe-create-and-add">Create & Add</button>
-          <button class="mf-btn-black-pill" id="btn-recipe-create-only">Create</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL / VIEW: Nutrition Breakdown & Progress Bars (Screenshot 5) -->
-    <div class="mf-fullscreen-modal" id="mf-nutrients-modal">
-      <header class="mf-recipe-header">
-        <button class="mf-back-btn" id="btn-back-nutrients">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <path d="m15 18-6-6 6-6"/>
-          </svg>
-        </button>
-        <span class="mf-recipe-header-title">Nutrition Breakdown</span>
-        <div style="width: 24px;"></div>
       </header>
 
-      <div class="mf-recipe-step-bar">
-        <div class="mf-recipe-step-fill" style="width: 75%; background: #3b82f6;"></div>
+      <!-- Date Pills Navigation Bar (Yesterday, Today, +3 Days) -->
+      <div id="date-pills-container" class="date-pills-bar">
+        <!-- Injected via JavaScript -->
       </div>
 
-      <div class="mf-recipe-body" id="mf-nutrients-body">
-        <!-- Dual Tone Micronutrient Progress Bars (Screenshot 5) -->
-        <div class="mf-nutrient-group">
-          <!-- Zinc (Pink/Coral Bar - Screenshot 5) -->
-          <div class="mf-nutrient-row">
-            <div class="mf-nutrient-meta">
-              <span class="mf-nutrient-name">Zinc</span>
-              <span class="mf-nutrient-stat">1.5 / 8 mg</span>
-              <span class="mf-nutrient-pct">19%</span>
+      <!-- Main Workspace Scroll Container -->
+      <main class="content-area">
+        <!-- 1. Insight Cards Carousel/Grid (From User's Code Example) -->
+        <section aria-label="Nutrition Insights" style="margin-bottom: 24px;">
+          <div class="insights-header-row">
+            <div class="insights-title-group">
+              <span class="insights-title">Performance Insights</span>
+              <span class="insights-count">3 Snapshots</span>
             </div>
-            <div class="mf-dual-track">
-              <div class="mf-dual-fill coral" style="width: 19%;"></div>
-              <div class="mf-dual-target-line" style="left: 60%;"></div>
+            <div style="font-size: 11px; color: var(--ink-3);">
+              Target: 1600–1800 kcal &bull; 60–95g Protein
             </div>
           </div>
 
-          <!-- Iron (Coral Bar) -->
-          <div class="mf-nutrient-row">
-            <div class="mf-nutrient-meta">
-              <span class="mf-nutrient-name">Iron</span>
-              <span class="mf-nutrient-stat">12.4 / 18 mg</span>
-              <span class="mf-nutrient-pct">69%</span>
+          <div class="insights-grid">
+            <!-- Insight Card 1: Calorie Deficit with Liveline Catmull-Rom Spline -->
+            <div id="insight-calorie-card" class="insight-card">
+              <!-- Injected dynamically -->
             </div>
-            <div class="mf-dual-track">
-              <div class="mf-dual-fill coral" style="width: 69%;"></div>
-              <div class="mf-dual-target-line" style="left: 70%;"></div>
-            </div>
-          </div>
 
-          <!-- Calcium (Coral Bar) -->
-          <div class="mf-nutrient-row">
-            <div class="mf-nutrient-meta">
-              <span class="mf-nutrient-name">Calcium</span>
-              <span class="mf-nutrient-stat">680 / 1000 mg</span>
-              <span class="mf-nutrient-pct">68%</span>
+            <!-- Insight Card 2: Allocation Segment Bar (From User's AllocationCard) -->
+            <div id="insight-allocation-card" class="insight-card">
+              <!-- Injected dynamically -->
             </div>
-            <div class="mf-dual-track">
-              <div class="mf-dual-fill coral" style="width: 68%;"></div>
-              <div class="mf-dual-target-line" style="left: 80%;"></div>
+
+            <!-- Insight Card 3: Protein Gap Anomaly Card -->
+            <div id="insight-gap-card" class="insight-card">
+              <!-- Injected dynamically -->
             </div>
           </div>
+        </section>
+
+        <!-- 2. 6-Compartment Stainless Steel Mess Tray Visualizer -->
+        <section id="tray-guide" class="thali-card-wrapper" aria-label="Visual Thali Guide">
+          <div class="thali-header-row">
+            <div>
+              <h2 style="font-family: var(--font-heading); font-size: 16px; font-weight: 700;">
+                🍽️ 6-Compartment Mess Tray Portioning Guide
+              </h2>
+              <p style="font-size: 12px; color: var(--ink-2); margin-top: 2px;">
+                Physical portion blueprint matching your <strong>39.5 cm &times; 29.5 cm &times; 2.3 cm</strong> hostel thali.
+              </p>
+            </div>
+
+            <div style="display: flex; gap: 6px; background: var(--field); padding: 3px; border-radius: 20px; border: 1px solid var(--line);">
+              <button class="plate-tab-pill date-pill-btn" data-meal="breakfast" style="border:none; padding:4px 10px; font-size:11px;">Breakfast</button>
+              <button class="plate-tab-pill date-pill-btn active" data-meal="lunch" style="border:none; padding:4px 10px; font-size:11px;">Lunch</button>
+              <button class="plate-tab-pill date-pill-btn" data-meal="snacks" style="border:none; padding:4px 10px; font-size:11px;">Snacks</button>
+              <button class="plate-tab-pill date-pill-btn" data-meal="dinner" style="border:none; padding:4px 10px; font-size:11px;">Dinner</button>
+            </div>
+          </div>
+
+          <div class="metal-thali-tray">
+            <div id="metal-thali-tray">
+              <!-- Injected dynamically based on selected meal -->
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. TaskRows Expandable Meal Checklist (From User's Code Example) -->
+        <section aria-label="Daily Meal Tasks" style="margin-bottom: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h2 style="font-family: var(--font-heading); font-size: 15px; font-weight: 700;">
+                📋 Daily Mess Meals Checklist
+              </h2>
+              <span style="font-size: 11.5px; color: var(--ink-3);">
+                Check off items as you eat to track your daily 1600–1800 kcal deficit. Tap ✏️ to swap/edit what chef cooked!
+              </span>
+            </div>
+            <div id="active-menu-source-pill" class="active-menu-source-pill">
+              <!-- Shows live sync or fallback status -->
+            </div>
+          </div>
+
+          <div id="task-rows-meal-container" class="task-rows-container">
+            <!-- Task row cards with expandable detail drawers injected via JavaScript -->
+          </div>
+        </section>
+
+        <!-- 4. Bottom Grid: Outside Protein Pantry & Off-Menu Logger -->
+        <div class="bottom-two-columns">
+          <!-- Left: Outside Protein Pantry -->
+          <section id="outside-protein" class="thali-card-wrapper">
+            <h3 style="font-family: var(--font-heading); font-size: 15px; font-weight: 700; margin-bottom: 6px;">
+              💊 Outside Protein Pantry (Target: 60–95g)
+            </h3>
+            <p style="font-size: 11.5px; color: var(--ink-2); margin-bottom: 12px;">
+              High-protein hostel staples to bridge the gap without cooking equipment:
+            </p>
+
+            <div id="outside-supplements-stack">
+              <!-- Injected via JavaScript -->
+            </div>
+
+            <div style="margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px;">
+              <div style="font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px;">Logged Today:</div>
+              <div id="logged-supplements-list"></div>
+            </div>
+          </section>
+
+          <!-- Right: Off-Menu Logger & Sleep Tracker -->
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <!-- Off-Menu / Canteen Logger -->
+            <section id="canteen-log" class="thali-card-wrapper">
+              <h3 style="font-family: var(--font-heading); font-size: 15px; font-weight: 700; margin-bottom: 6px;">
+                ✍️ Off-Menu / Canteen Logger
+              </h3>
+              <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; margin-bottom: 10px;">
+                <input type="text" id="input-canteen-name" class="btn-control" style="background:var(--field); text-align:left;" placeholder="Food (e.g. Maggi, Apple)" />
+                <input type="number" id="input-canteen-cal" class="btn-control" style="background:var(--field);" placeholder="Cals" />
+                <input type="number" id="input-canteen-pro" class="btn-control" style="background:var(--field);" placeholder="Prot (g)" />
+                <button id="btn-add-canteen-food" class="btn-control" style="background:#10b981; color:#fff; border-color:#10b981; font-weight:600;">+ Add</button>
+              </div>
+
+              <div style="font-size: 10.5px; color: var(--ink-3); margin-bottom: 6px;">Tap to Quick-Fill College Favorites:</div>
+              <div id="canteen-chips-row" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+
+              <div id="custom-items-output" style="margin-top: 12px;"></div>
+            </section>
+
+            <!-- Sleep & Morning Weight Tracker -->
+            <section id="sleep-log" class="thali-card-wrapper">
+              <h3 style="font-family: var(--font-heading); font-size: 15px; font-weight: 700; margin-bottom: 6px;">
+                🌙 Sleep & Weight Recovery
+              </h3>
+              <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+                <div>
+                  <label style="font-size: 11px; color: var(--ink-3); font-weight: 600; display: block; margin-bottom: 4px;">Sleep Duration (Hours)</label>
+                  <input type="number" id="sleep-hours-v2" class="btn-control" style="width: 100%;" step="0.5" value="7.5" />
+                </div>
+                <div>
+                  <label style="font-size: 11px; color: var(--ink-3); font-weight: 600; display: block; margin-bottom: 4px;">Morning Weight (kg)</label>
+                  <input type="text" id="morning-weight-v2" class="btn-control" style="width: 100%;" placeholder="e.g. 74.0 kg" />
+                </div>
+                <button id="btn-save-sleep-v2" class="btn-control" style="background:#10b981; color:#fff; border-color:#10b981; height: 32px;">💾 Save</button>
+              </div>
+            </section>
+          </div>
         </div>
-
-        <!-- Section: Other (Screenshot 5) -->
-        <h3 class="mf-nutrient-section-heading">Other</h3>
-
-        <!-- Calories (Screenshot 5: Blue Bar) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Calories</span>
-            <span class="mf-nutrient-stat" id="nutr-cals-text">1465 / 1700 kcal</span>
-            <span class="mf-nutrient-pct" id="nutr-cals-pct">86%</span>
-          </div>
-          <div class="mf-dual-track">
-            <div class="mf-dual-fill blue" id="nutr-cals-bar" style="width: 86%;"></div>
-            <div class="mf-dual-target-line" style="left: 60%;"></div>
-          </div>
-        </div>
-
-        <!-- Protein (Blue Bar) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Protein (Deficit Target)</span>
-            <span class="mf-nutrient-stat" id="nutr-pro-text">68.5 / 80 g</span>
-            <span class="mf-nutrient-pct" id="nutr-pro-pct">86%</span>
-          </div>
-          <div class="mf-dual-track">
-            <div class="mf-dual-fill blue" id="nutr-pro-bar" style="width: 86%;"></div>
-            <div class="mf-dual-target-line" style="left: 75%;"></div>
-          </div>
-        </div>
-
-        <!-- Alcohol (No Target - Screenshot 5) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Alcohol</span>
-            <span class="mf-nutrient-stat">0 g</span>
-            <span class="mf-nutrient-notarget">No Target</span>
-          </div>
-          <div class="mf-dual-track light-tint">
-            <div class="mf-dual-fill tint" style="width: 75%;"></div>
-          </div>
-        </div>
-
-        <!-- Caffeine (No Target - Screenshot 5) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Caffeine</span>
-            <span class="mf-nutrient-stat">0 mg</span>
-            <span class="mf-nutrient-notarget">No Target</span>
-          </div>
-          <div class="mf-dual-track light-tint">
-            <div class="mf-dual-fill tint" style="width: 75%;"></div>
-          </div>
-        </div>
-
-        <!-- Cholesterol (No Target - Screenshot 5) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Cholesterol</span>
-            <span class="mf-nutrient-stat">14.6 mg</span>
-            <span class="mf-nutrient-notarget">No Target</span>
-          </div>
-        </div>
-
-        <!-- Choline (11% - Screenshot 5) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Choline</span>
-            <span class="mf-nutrient-stat">48.8 / 425 mg</span>
-            <span class="mf-nutrient-pct">11%</span>
-          </div>
-          <div class="mf-dual-track">
-            <div class="mf-dual-fill blue" style="width: 11%;"></div>
-            <div class="mf-dual-target-line" style="left: 60%;"></div>
-          </div>
-        </div>
-
-        <!-- Water (8% - Screenshot 5) -->
-        <div class="mf-nutrient-row">
-          <div class="mf-nutrient-meta">
-            <span class="mf-nutrient-name">Water</span>
-            <span class="mf-nutrient-stat">224.1 / 2700 g</span>
-            <span class="mf-nutrient-pct">8%</span>
-          </div>
-          <div class="mf-dual-track">
-            <div class="mf-dual-fill blue" style="width: 8%;"></div>
-            <div class="mf-dual-target-line" style="left: 60%;"></div>
-          </div>
-        </div>
-
-        <!-- "Show all nutrients" iOS Switch (Screenshot 5) -->
-        <div class="mf-toggle-row">
-          <span class="mf-toggle-label">Show all nutrients</span>
-          <label class="mf-ios-switch">
-            <input type="checkbox" id="toggle-all-nutrients" checked />
-            <span class="mf-switch-slider"></span>
-          </label>
-        </div>
-      </div>
-
-      <div class="mf-recipe-bottom-bar">
-        <button class="mf-btn-black-pill" id="btn-nutrients-done">Done</button>
-      </div>
+      </main>
     </div>
-
-    <!-- MODAL: 6-Compartment Stainless Steel Mess Thali Guide -->
-    <div class="mf-bottom-sheet-backdrop" id="mf-thali-modal">
-      <div class="mf-thali-sheet">
-        <div class="mf-sheet-top-bar">
-          <div style="font-size:15px; font-weight:700; color:var(--mf-text-primary);">
-            🍽️ 6-Compartment Thali Portion Guide
-          </div>
-          <button class="mf-sheet-down-btn" id="btn-close-thali" title="Close Guide">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <path d="m6 9 6 6 6-6"/>
-            </svg>
-          </button>
-        </div>
-
-        <div style="padding: 0 18px 18px 18px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <div style="font-size:12px; color:var(--mf-text-secondary);">39.5 × 29.5 cm physical mess tray blueprint</div>
-            <span style="font-size:10.5px; font-weight:700; color:#10b981; background:#ecfdf5; padding:3px 8px; border-radius:12px;">Deficit Calibrated</span>
-          </div>
-
-          <div class="mf-thali-tray-blueprint" id="mf-thali-tray">
-            <!-- Injected via JavaScript -->
-          </div>
-
-          <div style="margin-top:14px; background:#f8fafc; border-radius:12px; padding:12px; font-size:12px; color:var(--mf-text-secondary); line-height:1.45;">
-            💡 <strong>Hostel Deficit Rule:</strong> Always fill Dal (top left) and Sabzi (top center) first. Eat the cucumber/green salad before touching Chapati to trigger leptin satiety. Avoid pickled achar and deep-fried papad.
-          </div>
-        </div>
-      </div>
-    <!-- MODAL: Meal Editor & Dish Swap Sheet (Trust & Counter Override) -->
-    <div class="mf-bottom-sheet-backdrop" id="mf-meal-edit-modal">
-      <div class="mf-meal-editor-sheet">
-        <div class="mf-editor-header">
-          <div>
-            <div class="mf-editor-pretitle" id="mf-editor-meal-label">LUNCH OVERRIDE</div>
-            <h3 class="mf-editor-title">What did the mess actually serve?</h3>
-          </div>
-          <button class="mf-editor-close-btn" id="btn-close-meal-editor" title="Close Editor">✕</button>
-        </div>
-
-        <div class="mf-editor-scroll-body">
-          <div class="mf-editor-hint">
-            Tap ✕ to remove any dish the mess skipped today, or search & add dishes below.
-          </div>
-
-          <!-- Current Dishes list in this meal -->
-          <div class="mf-editor-dishes-list" id="mf-editor-dishes-list">
-            <!-- Injected via JS -->
-          </div>
-
-          <!-- Add dish row -->
-          <div class="mf-editor-add-box">
-            <div class="mf-editor-add-input-wrap">
-              <input type="text" id="mf-editor-add-input" placeholder="Add dish (e.g. Aloo Baingan, Paneer, Boiled Eggs)..." />
-              <button class="mf-editor-add-btn" id="btn-editor-add-dish">+ Add</button>
-            </div>
-            <!-- Quick preset chips -->
-            <div class="mf-editor-presets">
-              <button class="mf-preset-chip" data-preset="Matar Paneer / Bhurji">+ Paneer</button>
-              <button class="mf-preset-chip" data-preset="3 Boiled Eggs (Campus Tapri)">+ 3 Boiled Eggs</button>
-              <button class="mf-preset-chip" data-preset="Bhindi Masala">+ Bhindi</button>
-              <button class="mf-preset-chip" data-preset="Baingan Bharta">+ Baingan</button>
-              <button class="mf-preset-chip" data-preset="Soyabin Badi Curry">+ Soya Curry</button>
-              <button class="mf-preset-chip" data-preset="1 Scoop Whey Protein (with water)">+ Whey</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Action footer -->
-        <div class="mf-editor-actions">
-          <button class="mf-editor-reset-btn" id="btn-editor-reset-meal">Reset to Live Mess</button>
-          <button class="mf-editor-save-btn" id="btn-editor-save-meal">Save & Verify Plate</button>
-        </div>
-      </div>
-    </div>
-
   </div>
+
+  <!-- MODAL: In-App Meal Editor & Counter Override -->
+  <div class="web-modal-backdrop" id="modal-meal-editor">
+    <div class="web-modal-sheet">
+      <div class="web-modal-header">
+        <div>
+          <div class="web-modal-pretitle" id="editor-meal-pretitle">LUNCH COUNTER OVERRIDE</div>
+          <h3 class="web-modal-title">What did the mess chef actually cook?</h3>
+        </div>
+        <button class="web-modal-close" id="btn-close-editor">✕</button>
+      </div>
+
+      <div class="web-modal-body">
+        <div class="web-modal-tip">
+          💡 Remove dishes the cooks skipped or ran out of, or search & add what was actually served at the mess counter.
+        </div>
+
+        <!-- Current dishes list -->
+        <div class="editor-dishes-stack" id="editor-dishes-stack"></div>
+
+        <!-- Add dish box -->
+        <div class="editor-add-container">
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="editor-input-dish" class="btn-control" style="flex:1; background:var(--surface); text-align:left;" placeholder="Type dish name (e.g. Aloo Baingan, Paneer, Boiled Eggs)..." />
+            <button id="btn-editor-add-dish" class="btn-control" style="background:#10b981; color:#fff; border-color:#10b981; font-weight:700;">+ Add</button>
+          </div>
+
+          <div style="font-size:11px; color:var(--ink-3); margin-top:8px;">Quick Tap Presets:</div>
+          <div class="editor-presets-row" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:4px;">
+            <button class="preset-chip" data-preset="Matar Paneer / Bhurji">+ Paneer</button>
+            <button class="preset-chip" data-preset="3 Boiled Eggs (Campus Tapri)">+ 3 Boiled Eggs</button>
+            <button class="preset-chip" data-preset="Bhindi Masala">+ Bhindi</button>
+            <button class="preset-chip" data-preset="Baingan Bharta">+ Baingan</button>
+            <button class="preset-chip" data-preset="Soyabin Badi Curry">+ Soya Curry</button>
+            <button class="preset-chip" data-preset="1 Scoop Whey Protein (with water)">+ Whey</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="web-modal-footer">
+        <button id="btn-editor-reset" class="btn-control" style="flex:1; justify-content:center;">Reset to Mess Schedule</button>
+        <button id="btn-editor-save" class="btn-control" style="flex:2; justify-content:center; background:#10b981; color:#fff; border-color:#10b981; font-weight:700;">Save & Verify Plate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="web-app-toast" class="web-toast"></div>
 
   <script type="module" src="./src/app.js"></script>
 </body>
