@@ -83,6 +83,20 @@
         <!-- Injected via JavaScript (Yesterday, Today, Sun 6, Mon 7...) -->
       </div>
 
+      <!-- Live Sync / Food Trust Status Bar -->
+      <div class="mf-sync-status-bar" id="mf-sync-status-bar">
+        <div class="mf-sync-left">
+          <span class="mf-sync-dot live" id="mf-sync-dot"></span>
+          <span class="mf-sync-label" id="mf-sync-label">Checking Poornima Mess Menu...</span>
+        </div>
+        <button class="mf-sync-refresh-btn" id="btn-sync-refresh" title="Re-sync from Poornima Mess Database">
+          <svg class="mf-sync-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span>Sync</span>
+        </button>
+      </div>
+
       <!-- Main Title (Screenshot 1) -->
       <div class="mf-title-section">
         <h1 class="mf-ai-plate-title">AI Plate</h1>
@@ -584,6 +598,51 @@
           <div style="margin-top:14px; background:#f8fafc; border-radius:12px; padding:12px; font-size:12px; color:var(--mf-text-secondary); line-height:1.45;">
             💡 <strong>Hostel Deficit Rule:</strong> Always fill Dal (top left) and Sabzi (top center) first. Eat the cucumber/green salad before touching Chapati to trigger leptin satiety. Avoid pickled achar and deep-fried papad.
           </div>
+        </div>
+      </div>
+    <!-- MODAL: Meal Editor & Dish Swap Sheet (Trust & Counter Override) -->
+    <div class="mf-bottom-sheet-backdrop" id="mf-meal-edit-modal">
+      <div class="mf-meal-editor-sheet">
+        <div class="mf-editor-header">
+          <div>
+            <div class="mf-editor-pretitle" id="mf-editor-meal-label">LUNCH OVERRIDE</div>
+            <h3 class="mf-editor-title">What did the mess actually serve?</h3>
+          </div>
+          <button class="mf-editor-close-btn" id="btn-close-meal-editor" title="Close Editor">✕</button>
+        </div>
+
+        <div class="mf-editor-scroll-body">
+          <div class="mf-editor-hint">
+            Tap ✕ to remove any dish the mess skipped today, or search & add dishes below.
+          </div>
+
+          <!-- Current Dishes list in this meal -->
+          <div class="mf-editor-dishes-list" id="mf-editor-dishes-list">
+            <!-- Injected via JS -->
+          </div>
+
+          <!-- Add dish row -->
+          <div class="mf-editor-add-box">
+            <div class="mf-editor-add-input-wrap">
+              <input type="text" id="mf-editor-add-input" placeholder="Add dish (e.g. Aloo Baingan, Paneer, Boiled Eggs)..." />
+              <button class="mf-editor-add-btn" id="btn-editor-add-dish">+ Add</button>
+            </div>
+            <!-- Quick preset chips -->
+            <div class="mf-editor-presets">
+              <button class="mf-preset-chip" data-preset="Matar Paneer / Bhurji">+ Paneer</button>
+              <button class="mf-preset-chip" data-preset="3 Boiled Eggs (Campus Tapri)">+ 3 Boiled Eggs</button>
+              <button class="mf-preset-chip" data-preset="Bhindi Masala">+ Bhindi</button>
+              <button class="mf-preset-chip" data-preset="Baingan Bharta">+ Baingan</button>
+              <button class="mf-preset-chip" data-preset="Soyabin Badi Curry">+ Soya Curry</button>
+              <button class="mf-preset-chip" data-preset="1 Scoop Whey Protein (with water)">+ Whey</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action footer -->
+        <div class="mf-editor-actions">
+          <button class="mf-editor-reset-btn" id="btn-editor-reset-meal">Reset to Live Mess</button>
+          <button class="mf-editor-save-btn" id="btn-editor-save-meal">Save & Verify Plate</button>
         </div>
       </div>
     </div>

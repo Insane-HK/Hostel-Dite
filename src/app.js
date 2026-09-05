@@ -1,6 +1,8 @@
 import { POORNIMA_MENU } from './data/poornima_menu.js';
 import { OUTSIDE_SUPPLEMENTS } from './data/supplements.js';
 import { CANTEEN_ITEMS } from './data/canteen_items.js';
+import { getMenuForDate, saveMealOverride, resetMealOverride } from './services/menu_service.js';
+import { matchDish } from './data/nutrition_dictionary.js';
 
 /* ─────────────────────────────────────────────────────────
  * TIMEZONE HELPER: STRICT ASIA/KOLKATA (IST = UTC + 5:30)
@@ -54,6 +56,10 @@ let appState = loadState();
 const istCurrent = getISTDate();
 let selectedDate = new Date(istCurrent.getFullYear(), istCurrent.getMonth(), istCurrent.getDate(), 12, 0, 0);
 let activeMealCategory = 'lunch';
+let currentMenuResult = null;
+
+let editingMealCategory = 'lunch';
+let editingMealItems = [];
 
 function loadState() {
   try {
@@ -90,6 +96,7 @@ function getDayLog(dateKey) {
         }
       ],
       customFoods: [],
+      mealOverrides: {},
       sleep: { hours: 7.5, quality: 4 }
     };
     saveState();
@@ -100,11 +107,11 @@ function getDayLog(dateKey) {
 /* ─────────────────────────────────────────────────────────
  * TOTALS & CALCULATIONS
  * ───────────────────────────────────────────────────────── */
-function calculateDayTotals(dateKey) {
+function calculateDayTotals(dateKey, mealsData) {
   const log = getDayLog(dateKey);
   const dateObj = parseDateKey(dateKey);
   const dayOfWeek = dateObj.getDay();
-  const menuData = POORNIMA_MENU[dayOfWeek]?.meals || {};
+  const menuData = mealsData || (currentMenuResult?.meals) || POORNIMA_MENU[dayOfWeek]?.meals || {};
 
   let calories = 0;
   let protein = 0;
@@ -114,17 +121,19 @@ function calculateDayTotals(dateKey) {
   let outsideProtein = 0;
 
   Object.values(menuData).forEach(category => {
-    category.forEach(item => {
-      const state = log.consumedMeals[item.id];
-      if (state && state.consumed) {
-        const qty = state.qty !== undefined ? state.qty : (item.recQty || 1);
-        calories += item.calories * qty;
-        protein += item.protein * qty;
-        carbs += item.carbs * qty;
-        fat += item.fat * qty;
-        messProtein += item.protein * qty;
-      }
-    });
+    if (Array.isArray(category)) {
+      category.forEach(item => {
+        const state = log.consumedMeals[item.id];
+        if (state && state.consumed) {
+          const qty = state.qty !== undefined ? state.qty : (item.recQty || 1);
+          calories += (item.calories || 0) * qty;
+          protein += (item.protein || 0) * qty;
+          carbs += (item.carbs || 0) * qty;
+          fat += (item.fat || 0) * qty;
+          messProtein += (item.protein || 0) * qty;
+        }
+      });
+    }
   });
 
   (log.supplements || []).forEach(s => {
@@ -246,13 +255,35 @@ function renderDayCarousel() {
   });
 }
 
-function renderDashboard() {
+export async function renderDashboard(forceRefresh = false) {
   const dateKey = formatDateKey(selectedDate);
-  const dateObj = parseDateKey(dateKey);
-  const dayOfWeek = dateObj.getDay();
-  const menuData = POORNIMA_MENU[dayOfWeek] || POORNIMA_MENU[6];
-  const totals = calculateDayTotals(dateKey);
   const log = getDayLog(dateKey);
+
+  // Sync Bar UI feedback
+  const syncLabel = document.getElementById('mf-sync-label');
+  const syncDot = document.getElementById('mf-sync-dot');
+  const syncRefreshBtn = document.getElementById('btn-sync-refresh');
+
+  if (syncRefreshBtn && forceRefresh) {
+    syncRefreshBtn.classList.add('spinning');
+  }
+
+  // Fetch from Live Firestore / Fallback / User Overrides
+  const menuResult = await getMenuForDate(dateKey, appState, forceRefresh);
+  currentMenuResult = menuResult;
+
+  if (syncRefreshBtn) {
+    syncRefreshBtn.classList.remove('spinning');
+  }
+
+  // Update Sync Status Bar
+  if (syncLabel && syncDot) {
+    syncLabel.innerText = menuResult.statusBadge;
+    syncLabel.title = menuResult.statusNote;
+    syncDot.className = `mf-sync-dot ${menuResult.source || 'cycle'}`;
+  }
+
+  const totals = calculateDayTotals(dateKey, menuResult.meals);
 
   // 1. Top Header Calorie Pill & Circular Progress Arc (Screenshot 1)
   const calTextEl = document.getElementById('mf-header-calorie-text');
@@ -261,7 +292,6 @@ function renderDashboard() {
     calTextEl.innerText = `${totals.calories} / ${totals.targetCal}`;
   }
   if (arcFillEl) {
-    // Circle radius = 15, circumference = 2 * PI * 15 ≈ 94.25
     const circumference = 94.25;
     const pct = Math.min(1, totals.calories / totals.targetCal);
     const offset = circumference * (1 - pct);
@@ -272,10 +302,10 @@ function renderDashboard() {
   updateNutrientsModal(totals);
 
   // 3. 6-Compartment Thali Tray Blueprint
-  renderThaliBlueprint(menuData);
+  renderThaliBlueprint(menuResult.meals);
 
   // 4. Meal Cards & Ingredients List (Screenshot 1)
-  renderMealCards(menuData, log, dateKey);
+  renderMealCards(menuResult.meals, log, dateKey);
 
   // 5. Search Sheet "Latest" items (Screenshot 2)
   renderSearchSheetItems(log, dateKey);
@@ -302,11 +332,11 @@ function updateNutrientsModal(totals) {
   if (proBar) proBar.style.width = `${proPctNum}%`;
 }
 
-function renderThaliBlueprint(menuData) {
+function renderThaliBlueprint(mealsData) {
   const container = document.getElementById('mf-thali-tray');
   if (!container) return;
 
-  const mealItems = menuData.meals[activeMealCategory] || menuData.meals.lunch || [];
+  const mealItems = (mealsData && (mealsData[activeMealCategory] || mealsData.lunch)) || [];
 
   const compMap = {
     comp_top_left: null,
@@ -327,7 +357,7 @@ function renderThaliBlueprint(menuData) {
     compMap.comp_side_left = { name: "Cucumber Salad", unit: "1 Full Plate", calories: 25 };
   }
   if (!compMap.comp_side_right) {
-    compMap.comp_side_right = { name: "Lemon / Chili (Skip Achar)", unit: "0 kcal", calories: 5 };
+    compMap.comp_side_right = { name: "Lemon / Roasted Papad", unit: "0-45 kcal", calories: 20 };
   }
 
   function renderSlot(slotKey, title) {
@@ -344,7 +374,7 @@ function renderThaliBlueprint(menuData) {
       <div class="mf-thali-katori">
         <span class="mf-katori-header">${title}</span>
         <div class="mf-katori-food">${item.name}</div>
-        <div class="mf-katori-portion">${item.unit}</div>
+        <div class="mf-katori-portion">${item.unit || '1 portion'}</div>
       </div>
     `;
   }
@@ -363,7 +393,7 @@ function renderThaliBlueprint(menuData) {
   `;
 }
 
-function renderMealCards(menuData, log, dateKey) {
+function renderMealCards(mealsData, log, dateKey) {
   const container = document.getElementById('mf-meals-stack');
   if (!container) return;
 
@@ -375,7 +405,7 @@ function renderMealCards(menuData, log, dateKey) {
   ];
 
   container.innerHTML = mealOrder.map(meal => {
-    const items = menuData.meals[meal.key] || [];
+    const items = mealsData[meal.key] || [];
     let mealCals = 0;
     let mealPro = 0;
     let mealCarbs = 0;
@@ -389,19 +419,19 @@ function renderMealCards(menuData, log, dateKey) {
 
     items.forEach(item => {
       const q = item.recQty || 1;
-      plannedCals += item.calories * q;
-      plannedPro += item.protein * q;
-      plannedCarbs += item.carbs * q;
-      plannedFat += item.fat * q;
+      plannedCals += (item.calories || 0) * q;
+      plannedPro += (item.protein || 0) * q;
+      plannedCarbs += (item.carbs || 0) * q;
+      plannedFat += (item.fat || 0) * q;
 
       const state = log.consumedMeals[item.id];
       const qty = state && state.qty !== undefined ? state.qty : q;
       if (state && state.consumed) {
         hasLoggedItems = true;
-        mealCals += item.calories * qty;
-        mealPro += item.protein * qty;
-        mealCarbs += item.carbs * qty;
-        mealFat += item.fat * qty;
+        mealCals += (item.calories || 0) * qty;
+        mealPro += (item.protein || 0) * qty;
+        mealCarbs += (item.carbs || 0) * qty;
+        mealFat += (item.fat || 0) * qty;
       }
     });
 
@@ -417,29 +447,31 @@ function renderMealCards(menuData, log, dateKey) {
       const state = log.consumedMeals[item.id] || { consumed: false, qty: item.recQty || 1 };
       const isConsumed = state.consumed;
       const currentQty = state.qty !== undefined ? state.qty : (item.recQty || 1);
-      const effectiveCal = Math.round(item.calories * currentQty);
-      const effectivePro = Math.round(item.protein * currentQty * 10) / 10;
-      const effectiveCarbs = Math.round(item.carbs * currentQty);
-      const effectiveFat = Math.round(item.fat * currentQty);
+      const effectiveCal = Math.round((item.calories || 0) * currentQty);
+      const effectivePro = Math.round((item.protein || 0) * currentQty * 10) / 10;
+      const effectiveCarbs = Math.round((item.carbs || 0) * currentQty);
+      const effectiveFat = Math.round((item.fat || 0) * currentQty);
 
       let itemIcon = '🍲';
       let unitLabel = 'serving';
-      const nameLower = item.name.toLowerCase();
+      const nameLower = (item.name || '').toLowerCase();
 
       if (nameLower.includes('lemon')) { itemIcon = '🍋'; unitLabel = 'tbsp'; }
-      else if (nameLower.includes('mustard')) { itemIcon = '🍯'; unitLabel = 'tsp'; }
-      else if (nameLower.includes('salt')) { itemIcon = '🧂'; unitLabel = 'tsp'; }
-      else if (nameLower.includes('pepper')) { itemIcon = '🧂'; unitLabel = 'tsp'; }
       else if (nameLower.includes('chana dal') || nameLower.includes('chickpea')) { itemIcon = '🫘'; unitLabel = 'katori'; }
+      else if (nameLower.includes('chhola') || nameLower.includes('chhole') || nameLower.includes('rajma')) { itemIcon = '🫘'; unitLabel = 'katori'; }
       else if (nameLower.includes('dal')) { itemIcon = '🥣'; unitLabel = 'katori'; }
-      else if (nameLower.includes('bhindi') || nameLower.includes('torai') || nameLower.includes('sabzi')) { itemIcon = '🥬'; unitLabel = 'katori'; }
-      else if (nameLower.includes('roti') || nameLower.includes('chapati')) { itemIcon = '🫓'; unitLabel = 'roti'; }
-      else if (nameLower.includes('rayta') || nameLower.includes('curd') || nameLower.includes('dahi') || nameLower.includes('yogurt')) { itemIcon = '🥛'; unitLabel = 'katori'; }
-      else if (nameLower.includes('salad') || nameLower.includes('kheera') || nameLower.includes('cucumber')) { itemIcon = '🥒'; unitLabel = 'cup'; }
-      else if (nameLower.includes('tomato')) { itemIcon = '🍅'; unitLabel = 'cup'; }
+      else if (nameLower.includes('bhindi') || nameLower.includes('torai') || nameLower.includes('sabzi') || nameLower.includes('loki')) { itemIcon = '🥬'; unitLabel = 'katori'; }
+      else if (nameLower.includes('roti') || nameLower.includes('chapati') || nameLower.includes('paratha')) { itemIcon = '🫓'; unitLabel = 'roti'; }
+      else if (nameLower.includes('rayta') || nameLower.includes('curd') || nameLower.includes('dahi')) { itemIcon = '🥛'; unitLabel = 'katori'; }
+      else if (nameLower.includes('salad')) { itemIcon = '🥒'; unitLabel = 'plate'; }
       else if (nameLower.includes('tea') || nameLower.includes('chai')) { itemIcon = '☕'; unitLabel = 'cup'; }
+      else if (nameLower.includes('milk') || nameLower.includes('thandai')) { itemIcon = '🥛'; unitLabel = 'glass'; }
       else if (nameLower.includes('poha')) { itemIcon = '🍚'; unitLabel = 'bowl'; }
       else if (nameLower.includes('soya')) { itemIcon = '🌱'; unitLabel = 'katori'; }
+      else if (nameLower.includes('kadhi')) { itemIcon = '🥣'; unitLabel = 'katori'; }
+      else if (nameLower.includes('puri') || nameLower.includes('poori')) { itemIcon = '🫓'; unitLabel = 'puri'; }
+      else if (nameLower.includes('egg')) { itemIcon = '🥚'; unitLabel = 'egg'; }
+      else if (nameLower.includes('whey')) { itemIcon = '💊'; unitLabel = 'scoop'; }
 
       return `
         <div class="mf-ingredient-row">
@@ -447,10 +479,10 @@ function renderMealCards(menuData, log, dateKey) {
           <div class="mf-ingredient-meta">
             <div class="mf-ingredient-name">
               <span>${item.name}</span>
-              <span class="mf-tag-badge ${item.tag}">${item.tag}</span>
+              <span class="mf-tag-badge ${item.tag || 'portion'}">${item.tag || 'portion'}</span>
             </div>
             <div class="mf-ingredient-macros">
-              ${effectiveCal}🔥  ${effectivePro}P  ${effectiveFat}F  ${effectiveCarbs}C  •  ${item.unit}
+              ${effectiveCal}🔥  ${effectivePro}P  ${effectiveFat}F  ${effectiveCarbs}C  •  ${item.unit || '1 serving'}
             </div>
           </div>
 
@@ -475,7 +507,12 @@ function renderMealCards(menuData, log, dateKey) {
         <div class="mf-meal-card-header">
           <div class="mf-dish-icon-box">${meal.icon}</div>
           <div class="mf-dish-info">
-            <div class="mf-dish-title">${meal.title}</div>
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
+              <span class="mf-dish-title">${meal.title}</span>
+              <button class="mf-edit-meal-btn" data-action="edit-meal-dishes" data-meal-key="${meal.key}" title="Did chef cook something different? Click to edit or swap dishes">
+                ✏️ Swap / Edit
+              </button>
+            </div>
             <div class="mf-dish-macros-line">
               <strong>${displayCals}🔥</strong>  ${displayPro}P  ${displayFat}F  ${displayCarbs}C  •  ${meal.time} <span style="font-size:10.5px; opacity:0.85;">(${statusNote})</span>
             </div>
@@ -513,9 +550,18 @@ function renderMealCards(menuData, log, dateKey) {
   container.querySelectorAll('[data-action="open-thali-for-meal"]').forEach(pill => {
     pill.addEventListener('click', () => {
       activeMealCategory = pill.getAttribute('data-meal-key');
-      renderThaliBlueprint(menuData);
+      renderThaliBlueprint(mealsData);
       const thaliModal = document.getElementById('mf-thali-modal');
       if (thaliModal) thaliModal.classList.add('open');
+    });
+  });
+
+  // Edit / Swap Meal Dishes
+  container.querySelectorAll('[data-action="edit-meal-dishes"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const mealKey = btn.getAttribute('data-meal-key');
+      openMealEditor(mealKey, mealsData, dateKey);
     });
   });
 
@@ -546,6 +592,70 @@ function renderMealCards(menuData, log, dateKey) {
       showToast(`Portion adjusted to ${nextQty}x`);
     });
   });
+}
+
+/* ─────────────────────────────────────────────────────────
+ * MEAL EDITOR MODAL (Trust & Counter Override)
+ * ───────────────────────────────────────────────────────── */
+function openMealEditor(category, mealsData, dateKey) {
+  editingMealCategory = category;
+  const currentItems = mealsData[category] || [];
+  editingMealItems = JSON.parse(JSON.stringify(currentItems));
+
+  const modal = document.getElementById('mf-meal-edit-modal');
+  const labelEl = document.getElementById('mf-editor-meal-label');
+  if (labelEl) {
+    labelEl.innerText = `${category.toUpperCase()} COUNTER OVERRIDE • ${dateKey}`;
+  }
+
+  renderEditorDishesList();
+  if (modal) modal.classList.add('open');
+}
+
+function renderEditorDishesList() {
+  const listEl = document.getElementById('mf-editor-dishes-list');
+  if (!listEl) return;
+
+  if (editingMealItems.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align:center; padding:16px; color:#94a3b8; font-size:13px;">
+        No dishes in this meal. Add what the mess served below!
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = editingMealItems.map((item, idx) => `
+    <div class="mf-editor-dish-row">
+      <div class="mf-editor-dish-left">
+        <div style="font-size:18px;">🍲</div>
+        <div class="mf-editor-dish-meta">
+          <div class="mf-editor-dish-name">${item.name}</div>
+          <div class="mf-editor-dish-macros">
+            ${item.calories} cal • ${item.protein}g P • ${item.unit || '1 serving'}
+          </div>
+        </div>
+      </div>
+      <button class="mf-editor-remove-btn" data-remove-index="${idx}" title="Remove this dish">✕</button>
+    </div>
+  `).join('');
+
+  listEl.querySelectorAll('[data-remove-index]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-remove-index'), 10);
+      const removed = editingMealItems.splice(idx, 1);
+      renderEditorDishesList();
+      showToast(`Removed ${removed[0]?.name || 'dish'}`);
+    });
+  });
+}
+
+function addDishToEditor(dishName) {
+  if (!dishName || !dishName.trim()) return;
+  const matched = matchDish(dishName.trim());
+  editingMealItems.push(matched);
+  renderEditorDishesList();
+  showToast(`Added ${matched.name} (+${matched.protein}g P)`);
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -634,6 +744,74 @@ function setupEventListeners() {
   if (searchBackdrop) {
     searchBackdrop.addEventListener('click', (e) => {
       if (e.target === searchBackdrop) closeSearch();
+    });
+  }
+
+  // Live Sync Re-fetch Button
+  const btnSyncRefresh = document.getElementById('btn-sync-refresh');
+  if (btnSyncRefresh) {
+    btnSyncRefresh.addEventListener('click', () => {
+      showToast('Connecting to Poornima University Firestore...');
+      renderDashboard(true);
+    });
+  }
+
+  // Meal Editor Handlers
+  const mealEditModal = document.getElementById('mf-meal-edit-modal');
+  const btnCloseMealEditor = document.getElementById('btn-close-meal-editor');
+  const btnSaveMealOverride = document.getElementById('btn-editor-save-meal');
+  const btnResetMealOverride = document.getElementById('btn-editor-reset-meal');
+  const editorAddInput = document.getElementById('mf-editor-add-input');
+  const btnEditorAddDish = document.getElementById('btn-editor-add-dish');
+
+  if (btnCloseMealEditor && mealEditModal) {
+    btnCloseMealEditor.addEventListener('click', () => mealEditModal.classList.remove('open'));
+  }
+  if (mealEditModal) {
+    mealEditModal.addEventListener('click', (e) => {
+      if (e.target === mealEditModal) mealEditModal.classList.remove('open');
+    });
+  }
+
+  if (btnEditorAddDish && editorAddInput) {
+    const handleAdd = () => {
+      const val = editorAddInput.value.trim();
+      if (val) {
+        addDishToEditor(val);
+        editorAddInput.value = '';
+      }
+    };
+    btnEditorAddDish.addEventListener('click', handleAdd);
+    editorAddInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleAdd();
+    });
+  }
+
+  // Preset Chips
+  document.querySelectorAll('.mf-preset-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const preset = chip.getAttribute('data-preset');
+      if (preset) addDishToEditor(preset);
+    });
+  });
+
+  if (btnSaveMealOverride) {
+    btnSaveMealOverride.addEventListener('click', () => {
+      const dateKey = formatDateKey(selectedDate);
+      saveMealOverride(dateKey, editingMealCategory, editingMealItems, appState, saveState);
+      if (mealEditModal) mealEditModal.classList.remove('open');
+      renderDashboard();
+      showToast(`Saved verified ${editingMealCategory}!`);
+    });
+  }
+
+  if (btnResetMealOverride) {
+    btnResetMealOverride.addEventListener('click', () => {
+      const dateKey = formatDateKey(selectedDate);
+      resetMealOverride(dateKey, editingMealCategory, appState, saveState);
+      if (mealEditModal) mealEditModal.classList.remove('open');
+      renderDashboard(true);
+      showToast(`Reset ${editingMealCategory} to live mess schedule.`);
     });
   }
 
